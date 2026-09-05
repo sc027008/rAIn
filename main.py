@@ -155,11 +155,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "type": "line",
                     "label": "積算雨量(mm)",
                     "data": cumulative_rain,
-                    "borderColor": "#2e7d32",
+                    "borderColor": "#7B1FA2",  # 傘絵文字風の深みのある紫色へ変更
                     "borderWidth": 4,
                     "pointRadius": 0,
                     "fill": True,
-                    "backgroundColor": "rgba(46, 125, 50, 0.08)",
+                    "backgroundColor": "rgba(123, 31, 162, 0.08)",  # 透過紫の背景色
                     "yAxisID": "y2",
                     "order": 0,
                     "datalabels": {"display": False}
@@ -241,8 +241,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "font": {"size": 19, "family": "LINE Seed JP"}
                     },
                     "grid": {
-                        "color": "#e0e0e0",
-                        "borderDash": [3, 3]
+                        "color": "#bdbdbd", # 補助線を少し濃いグレーに変更
+                        "borderDash": [2, 3] # 細かいドットに変更
                     }
                 },
                 "y2": {
@@ -257,8 +257,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     },
                     "grid": {
                         "drawOnChartArea": True,
-                        "color": "#e0e0e0",
-                        "borderDash": [3, 3]
+                        "color": "#bdbdbd", # 補助線を少し濃いグレーに変更
+                        "borderDash": [2, 3] # 細かいドットに変更
                     }
                 }
             }
