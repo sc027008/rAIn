@@ -273,7 +273,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "display": True,
                     "text": title_text,
                     "color": "#111111",
-                    "font": {"size": 19, "family": "LINE Seed JP", "weight": "bold"},
+                    "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"}, # フォント変更
                     "padding": 12
                 },
                 "legend": {"display": False},
@@ -294,11 +294,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "display": True,
                         "text": "時間後",
                         "color": "#111111",
-                        "font": {"size": 19, "family": "LINE Seed JP", "weight": "bold"}
+                        "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"} # フォント変更
                     },
                     "ticks": {
                         "color": "#111111",
-                        "font": {"size": 18, "family": "LINE Seed JP"},
+                        "font": {"size": 18, "family": "Noto Sans CJK JP"}, # フォント変更
                         "maxRotation": 0
                     }
                 },
@@ -364,7 +364,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     # POST通信失敗時のフォールバック処理（URLエンコードGET送信）
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
-    return f"https://quickchart.io/chart?v=4&c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=LINE+Seed+JP"
+    return f"https://quickchart.io/chart?v=4&c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=Noto+Sans+CJK+JP"
 
 # =========================================================
 # 4. データ取得・カード構築・送信処理
@@ -588,7 +588,7 @@ def main():
             # 本文中の積算雨量を整数表示
             cum_15h_int = int(cum_15h)
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
-            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
+            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN, today_str)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
 # =========================================================
