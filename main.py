@@ -139,40 +139,59 @@ def generate_chart_url(hourly_rain_list):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # ★ 例外発生時でもフォールバック座標で必ず描画完遂する安全JS描画コード
-    draw_y_titles_js = """function(chart) {
-        try {
-            var ctx = chart.ctx;
-            if (!ctx) return;
-            ctx.save();
-            ctx.font = "bold 15px BIZ UDPGothic, sans-serif";
-            ctx.fillStyle = "#111111";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
-            
-            var left = (chart.chartArea && chart.chartArea.left) ? chart.chartArea.left : 55;
-            var right = (chart.chartArea && chart.chartArea.right) ? chart.chartArea.right : 485;
-            var top = 6;
-            
-            // 左軸タイトル
-            ctx.fillText("棒グラフ", left, top);
-            ctx.fillText("時間雨量", left, top + 17);
-            ctx.fillText("[mm/h]", left, top + 34);
-            
-            // 右軸タイトル
-            ctx.fillText("折れ線グラフ", right, top);
-            ctx.fillText("積算雨量", right, top + 17);
-            ctx.fillText("[mm]", right, top + 34);
-            
-            ctx.restore();
-        } catch(e) {}
-    }"""
-
     chart_config = {
         "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [
+                {
+                    # ★ 縦軸タイトル（左）描画用の透明ダミーデータセット
+                    "type": "line",
+                    "label": "dummy_title_left",
+                    # 左端(インデックス0)の最上部にのみ透明な点を配置
+                    "data": [y1_max] + [None] * (len(hourly_rain_list) - 1),
+                    "yAxisID": "y1",
+                    "borderColor": "transparent",
+                    "borderWidth": 0,
+                    "pointRadius": 0,
+                    "pointHoverRadius": 0,
+                    "fill": False,
+                    "order": 10,
+                    "datalabels": {
+                        "display": True,
+                        "align": "top",    # 点のさらに上にテキストを配置
+                        "anchor": "center",
+                        "offset": -4,
+                        "color": "#111111",
+                        "font": {"size": 15, "family": "BIZ UDPGothic", "weight": "bold"},
+                        "textAlign": "center",
+                        "formatter": "function() { return '棒グラフ\\n時間雨量\\n[mm/h]'; }"
+                    }
+                },
+                {
+                    # ★ 縦軸タイトル（右）描画用の透明ダミーデータセット
+                    "type": "line",
+                    "label": "dummy_title_right",
+                    # 右端(インデックス最後)の最上部にのみ透明な点を配置
+                    "data": [None] * (len(hourly_rain_list) - 1) + [y2_max],
+                    "yAxisID": "y2",
+                    "borderColor": "transparent",
+                    "borderWidth": 0,
+                    "pointRadius": 0,
+                    "pointHoverRadius": 0,
+                    "fill": False,
+                    "order": 10,
+                    "datalabels": {
+                        "display": True,
+                        "align": "top",
+                        "anchor": "center",
+                        "offset": -4,
+                        "color": "#111111",
+                        "font": {"size": 15, "family": "BIZ UDPGothic", "weight": "bold"},
+                        "textAlign": "center",
+                        "formatter": "function() { return '折れ線グラフ\\n積算雨量\\n[mm]'; }"
+                    }
+                },
                 {
                     # メインの折れ線（深緑）
                     "type": "line",
@@ -184,7 +203,7 @@ def generate_chart_url(hourly_rain_list):
                     "pointHoverRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
-                    "order": 0,
+                    "order": 0,  # 一番手前
                     "datalabels": {"display": False}
                 },
                 {
@@ -198,7 +217,7 @@ def generate_chart_url(hourly_rain_list):
                     "pointHoverRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
-                    "order": 1,
+                    "order": 1,  # メイン線と棒グラフの間
                     "datalabels": {"display": False}
                 },
                 {
@@ -208,7 +227,7 @@ def generate_chart_url(hourly_rain_list):
                     "data": hourly_rain_list,
                     "backgroundColor": bar_colors,
                     "yAxisID": "y1",
-                    "order": 2,
+                    "order": 2,  # 一番奥
                     "datalabels": {
                         "display": "auto",
                         "anchor": "end",
@@ -227,9 +246,9 @@ def generate_chart_url(hourly_rain_list):
             "legend": {"display": False},
             "layout": {
                 "padding": {
-                    "top": 58,   # ★上部タイトル用余白を最適化
-                    "left": 15,
-                    "right": 15,
+                    "top": 70,   # ★ダミーデータラベル（3行テキスト）が安全に収まる上部余白
+                    "left": 10,
+                    "right": 10,
                     "bottom": 5
                 }
             },
@@ -289,16 +308,10 @@ def generate_chart_url(hourly_rain_list):
                     }
                 ]
             }
-        },
-        "plugins": [
-            {
-                "id": "yAxisTopTitles",
-                "afterDraw": draw_y_titles_js
-            }
-        ]
+        }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded}&w=540&h=280&bkg=white&devicePixelRatio=3&f=BIZ+UDPGothic"
+    return f"https://quickchart.io/chart?c={encoded}&w=540&h=290&bkg=white&devicePixelRatio=3&f=BIZ+UDPGothic"
 
 def get_future_cumulative_rain_data(lat, lon, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -364,10 +377,10 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
                 {
                     "text": "<b>雨雲レーダーを開く</b>｜気象庁",
                     "color": {
-                        # ★ より濃くはっきり見やすくなったブルーグレー背景色
-                        "red": 0.82,
-                        "green": 0.85,
-                        "blue": 0.90,
+                        # ★ より鮮やかで視認性の高いスカイブルーに変更（枠線も消えます）
+                        "red": 0.40,
+                        "green": 0.80,
+                        "blue": 1.00,
                         "alpha": 1.0
                     },
                     "onClick": {
