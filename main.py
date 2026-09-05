@@ -14,8 +14,9 @@ STATE_FILE = "state.json"
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
 # Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット不要・ダークモード対応)
-ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"  # 雨雲
-ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png" # 虹
+ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"      # 雨雲
+ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"    # 虹
+ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png" # 夜の街/夜空（雨の夜イメージ）
 
 
 # ---------------------------------------------------------
@@ -272,7 +273,7 @@ def main():
         
         formatted_text = (
             f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            f"<font color=\"#757575\">3時間予測積算 {cum_3h_str} mm ｜ 15時間予測積算 {cum_15h_str} mm</font>"
+            f"<font color=\"#757575\">今後3時間積算 {cum_3h_str} mm ｜ 15時間積算 {cum_15h_str} mm</font>"
         )
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY)
@@ -288,18 +289,14 @@ def main():
         save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date)
 
 
-    # --- 2. 終業時（17時前後）の夜間積算アラート判定 ---
+    # --- 2. 終業時（17時前後）の「今夜アメデス」アラート判定 ---
     if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
         _, cum_15h = get_future_cumulative_rain(lat, lon, zoom)
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
-            formatted_text = (
-                f"<b><font color=\"#f5a623\">夜間の降水予測</font></b><br>"
-                f"17時〜翌8時の予測積算雨量 <b>{cum_15h_str} mm</b><br>"
-                f"<font color=\"#757575\">退社前に排水ポンプの設定をご確認ください。</font>"
-            )
-            send_google_chat_card(webhook_url, lat, lon, "終業時排水準備", formatted_text, ICON_RAINY)
+            formatted_text = f"<b><font color=\"#f5a623\">17～翌8時の積算雨量 {cum_15h_str} mm</font></b>"
+            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
 
@@ -319,10 +316,10 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    # テスト1: アメデス（積算雨量併記）
+    # テスト1: アメデス（指定形式）
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
-        f"<font color=\"#757575\">3時間予測積算 35 mm ｜ 15時間予測積算 68 mm</font>"
+        f"<font color=\"#757575\">今後3時間積算 35 mm ｜ 15時間積算 68 mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY)
 
@@ -330,13 +327,9 @@ def test_all_notifications():
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
     send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", text_weak, ICON_RAINBOW)
 
-    # テスト3: 終業時排水準備（17時アラート）
-    text_evening = (
-        f"<b><font color=\"#f5a623\">夜間の降水予測</font></b><br>"
-        f"17時〜翌8時の予測積算雨量 <b>32 mm</b><br>"
-        f"<font color=\"#757575\">退社前に排水ポンプの設定をご確認ください。</font>"
-    )
-    send_google_chat_card(webhook_url, lat, lon, "終業時排水準備", text_evening, ICON_RAINY)
+    # テスト3: 今夜アメデス（指定形式）
+    text_evening = f"<b><font color=\"#f5a623\">17～翌8時の積算雨量 32 mm</font></b>"
+    send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN)
 
     print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
 
@@ -346,7 +339,7 @@ def test_all_notifications():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     # 【本番運用モード】（普段はこちらを有効化）
-    # main()
+    #main()
 
     # 【テスト送信モード】（テスト時は上の main() の頭に # を付け、下の行の # を消してください）
     test_all_notifications()
