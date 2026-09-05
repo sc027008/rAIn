@@ -482,32 +482,41 @@ import os
 import requests
 from io import BytesIO
 from PIL import Image
+from datetime import datetime, timezone, timedelta
 
-def tile_to_latlon_bounds(x, y, zoom):
-    """タイル座標(x, y)の北西端(NW)および南東端(SE)の緯度経度を逆算します。"""
-    n = 2.0 ** zoom
-    nw_lon = x / n * 360.0 - 180.0
-    nw_lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
-    nw_lat = math.degrees(nw_lat_rad)
+# 気象庁RGBカラーパレット（全24パターン統合定義）
+JMA_COMPLETE_PALETTE = [
+    ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
+    ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
+    ((33,  140, 255), 5.0, "雨"), ((65,  140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
+    ((0,   65,  255), 10.0, "やや強い雨"), ((0,   0,   255), 10.0, "やや強い雨"), ((90,  120, 240), 10.0, "やや強い雨"),
+    ((250, 245, 0),   20.0, "強い雨"), ((255, 255, 0),   20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
+    ((255, 153, 0),   30.0, "激しい雨"), ((255, 165, 0),   30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
+    ((255, 40,  0),   50.0, "非常に激しい雨"), ((255, 0,   0),   50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
+    ((180, 0,   104), 80.0, "猛烈な雨"), ((210, 0,   170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
+]
 
-    se_lon = (x + 1) / n * 360.0 - 180.0
-    se_lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n)))
-    se_lat = math.degrees(se_lat_rad)
+def local_parse_time(time_str):
+    return datetime.strptime(time_str, "%Y%m%d%H%M%S")
 
-    return nw_lat, nw_lon, se_lat, se_lon
-    
+def local_rgb_to_rainfall(pixel):
+    if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255):
+        return "降水なし", 0.0
+    r, g, b = pixel[:3]
+    min_dist = float("inf")
+    best = ("降水なし", 0.0)
+    for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
+        dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+        if dist < min_dist:
+            min_dist = dist
+            best = (desc, val)
+    return best
+
 def test_real_api_fetch():
     """
-    タイムゾーンの型を統一し、/immed/ パスによる
-    +1h〜+15h の全15時間予報タイルの取得を検証します。
+    メタデータから存在する member 値を自動検出し、
+    15時間分の降水予報データを確実に取得・評価します。
     """
-    import math
-    import os
-    import requests
-    from io import BytesIO
-    from PIL import Image
-    from datetime import datetime, timezone, timedelta
-
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -517,35 +526,7 @@ def test_real_api_fetch():
 
     lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 /immed/ パス適用 15時間全データ取得検証</b><br>"]
-
-    JMA_COMPLETE_PALETTE = [
-        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
-        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
-        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
-        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
-        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
-        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
-        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
-        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
-    ]
-
-    def local_parse_time(time_str):
-        # タイムゾーンなしの naive datetime としてパース
-        return datetime.strptime(time_str, "%Y%m%d%H%M%S")
-
-    def local_rgb_to_rainfall(pixel):
-        if not pixel or len(pixel) < 3: return "降水なし", 0.0
-        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
-        r, g, b = pixel[:3]
-        min_dist = float("inf")
-        best = ("降水なし", 0.0)
-        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
-            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-            if dist < min_dist:
-                min_dist = dist
-                best = (desc, val)
-        return best
+    logs = ["<b>📊 15時間全予報 自動フォールバック一括取得結果</b><br>"]
 
     xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
 
@@ -556,7 +537,16 @@ def test_real_api_fetch():
         n2_times = res_n2.json() if res_n2.status_code == 200 else []
         rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
 
-        # JST現在の時刻（naive datetime）を取得
+        # 1. メタデータ内に存在する member 値の動的抽出・検出
+        detected_members = set()
+        for item in n2_times + rasrf_times:
+            if "member" in item:
+                detected_members.add(item["member"])
+        
+        # 検出された member 値を記録（既知の基本値も補完）
+        member_candidates_base = list(detected_members) + [m for m in ["none", "immed"] if m not in detected_members]
+        logs.append(f"<b>【検出された member 値】</b>: {', '.join(detected_members) if detected_members else 'なし(デフォルト適用)'}<br>")
+
         now_jst = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
         start_dt = now_jst + timedelta(hours=1)
         target_hours = [start_dt + timedelta(hours=i) for i in range(15)]
@@ -577,21 +567,32 @@ def test_real_api_fetch():
 
             if best_match:
                 b_time, v_time = best_match["basetime"], best_match["validtime"]
-                if target_layer == "nowc":
-                    elem = best_match.get("elements", ["hrpns"])[0]
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                else:
-                    # Web GUIと同じ /immed/ パスを指定
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/immed/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                
+                # メタデータ指定の member を最優先にする試行リスト構築
+                meta_member = best_match.get("member")
+                candidates = [meta_member] if meta_member else []
+                for m in member_candidates_base:
+                    if m not in candidates:
+                        candidates.append(m)
 
-                t_res = requests.get(tile_url, headers=headers, timeout=5)
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    desc, val = local_rgb_to_rainfall(pixel)
-                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
-                else:
-                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font> URL:<code>{tile_url}</code>")
+                elem = best_match.get("elements", ["hrpns" if target_layer == "nowc" else "rasrf"])[0]
+                success = False
+
+                # 検出された member 候補を順次走査してタイル取得
+                for member in candidates:
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/{target_layer}/{b_time}/{member}/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                    t_res = requests.get(tile_url, headers=headers, timeout=5)
+                    
+                    if t_res.status_code == 200:
+                        img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                        pixel = img.getpixel((px, py))
+                        desc, val = local_rgb_to_rainfall(pixel)
+                        logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time} | Member:{member}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
+                        success = True
+                        break
+
+                if not success:
+                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): <font color=\"red\">HTTP 404 (全Member試行失敗)</font>")
             else:
                 logs.append(f"・<b>+{idx}h</b> ({th.strftime('%Y%m%d%H%M00')}): 該当データなし")
 
@@ -599,7 +600,7 @@ def test_real_api_fetch():
         logs.append(f"❌ 実行エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 /immed/ 適用結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "📊 15時間全予報 取得結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
