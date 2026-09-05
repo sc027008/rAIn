@@ -14,9 +14,9 @@ STATE_FILE = "state.json"
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
 # Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット不要・ダークモード対応)
-ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"      # 雨雲
-ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"    # 虹
-ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png" # 夜の街/夜空（雨の夜イメージ）
+ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"      # ☔ 傘（雨）
+ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"    # 🌈 虹
+ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png" # 🌃 夜の街/夜空（雨の夜イメージ）
 
 
 # ---------------------------------------------------------
@@ -282,7 +282,7 @@ def main():
 
     elif current_rank == 0 and last_notified_type == "RAINY":
         formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
-        send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", formatted_text, ICON_RAINBOW)
+        send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW)
         save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
 
     else:
@@ -316,18 +316,18 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    # テスト1: アメデス（箇条書き・改行形式）
+    # テスト1: アメデス（傘アイコン ☔）
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
         f"<font color=\"#757575\">•今後3時間積算 35 mm<br>•今後15時間積算 68 mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY)
 
-    # テスト2: 雨が弱くなります
+    # テスト2: 雨上がりの予感
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
-    send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", text_weak, ICON_RAINBOW)
+    send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW)
 
-    # テスト3: 今夜アメデス（色なし・数値のみ太字）
+    # テスト3: 今夜アメデス
     text_evening = f"17～翌8時の積算雨量 <b>32 mm</b>"
     send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN)
 
