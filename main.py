@@ -498,78 +498,70 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    [Step 2] 幾何学的クロスチェック ＋ N1/N2 ピクセル取得の統合検証
+    [Step 3] N1(実況) および N2(直近+5分予測) の hrpns タイルから
+    実際の雨雲ピクセル(A>0)を全国走査で直接抽出し、雨量マッピングを検証します。
     """
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-
-    if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+    if not webhook_url:
+        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 [Step 2] 座標精度クロスチェック ＋ N1/N2検証</b><br>"]
+    logs = ["<b>🔍 [Step 3] N1/N2 (hrpns) 雨雲ピクセル抽出検証</b><br>"]
 
-    # 1. タイル・ピクセル計算と境界座標の逆算
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-    nw_lat, nw_lon, se_lat, se_lon = tile_to_latlon_bounds(xtile, ytile, 10)
+    test_coords = [
+        ("九州", 31.59, 130.55), ("四国", 33.84, 132.76), ("関西", 34.69, 135.50),
+        ("東海", 35.18, 136.90), ("関東", 35.68, 139.76), ("東北", 38.26, 140.87),
+        ("北海道", 43.06, 141.35), ("沖縄", 26.21, 127.68)
+    ]
 
-    # 地理的クロスチェック（ターゲット座標がタイルの範囲内に存在するか）
-    is_contained = (se_lat <= lat <= nw_lat) and (nw_lon <= lon <= se_lon)
+    targets = [
+        ("N1 (実況)", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", 0),
+        ("N2 (直近+5分)", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", -1)
+    ]
 
-    logs.append("<b>【1. 幾何学的クロスチェック】</b>")
-    logs.append(f"・指定座標: 緯度 {lat}, 経度 {lon}")
-    logs.append(f"・算出タイル(z=10): x={xtile}, y={ytile} | ピクセル: px={px}, py={py}")
-    logs.append(f"・タイル北西端(NW): 緯度 {nw_lat:.4f}, 経度 {nw_lon:.4f}")
-    logs.append(f"・タイル南東端(SE): 緯度 {se_lat:.4f}, 経度 {se_lon:.4f}")
-    logs.append(f"・<b>範囲内包含判定: {'✅ VALID (正常)' if is_contained else '❌ INVALID (計算不整合)'}</b><br>")
-
-    if not is_contained:
-        logs.append("⚠️ 座標計算に不整合があるため、ピクセル取得を中断します。")
-    else:
-        # 2. N1(現在値: index[0]) ピクセル抽出
+    for layer_name, url_target, target_idx in targets:
         try:
-            res_n1 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
-            if res_n1.status_code == 200:
-                n1_item = res_n1.json()[0]
-                b_time, v_time = n1_item["basetime"], n1_item["validtime"]
-                elem = n1_item.get("elements", ["hrpns"])[0]
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                
-                t_res = requests.get(url, headers=headers, timeout=5)
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    desc, val, _, _ = rgb_to_rainfall(pixel)
-                    logs.append(f"<b>【2. N1 現在地実況】</b> (Valid: {v_time})")
-                    logs.append(f"・抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
-        except Exception as e:
-            logs.append(f"❌ N1取得エラー: {e}<br>")
+            res = requests.get(url_target, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data:
+                    item = data[target_idx]
+                    b_time, v_time = item["basetime"], item["validtime"]
+                    elem = item.get("elements", ["hrpns"])[0]
 
-        # 3. N2(直近+5分: index[-1]) ピクセル抽出
-        try:
-            res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
-            if res_n2.status_code == 200:
-                n2_data = res_n2.json()
-                n2_item = n2_data[-1]
-                b_time, v_time = n2_item["basetime"], n2_item["validtime"]
-                elem = n2_item.get("elements", ["hrpns"])[0]
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                
-                t_res = requests.get(url, headers=headers, timeout=5)
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    desc, val, _, _ = rgb_to_rainfall(pixel)
-                    logs.append(f"<b>【3. N2 直近+5分予測】</b> (Valid: {v_time})")
-                    logs.append(f"・抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b>")
+                    found_pixel = None
+                    found_region = ""
+
+                    for region, lat, lon in test_coords:
+                        xtile, ytile, _, _ = latlon_to_tile(lat, lon, 10)
+                        url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                        t_res = requests.get(url, headers=headers, timeout=5)
+                        
+                        if t_res.status_code == 200:
+                            img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                            for x in range(0, img.width, 4):
+                                for y in range(0, img.height, 4):
+                                    p = img.getpixel((x, y))
+                                    if len(p) >= 4 and p[3] > 0 and p[:3] != (255, 255, 255):
+                                        found_pixel = p
+                                        found_region = region
+                                        break
+                                if found_pixel: break
+                        if found_pixel: break
+
+                    if found_pixel:
+                        desc, val, _, _ = rgb_to_rainfall(found_pixel)
+                        logs.append(f"<b>【{layer_name}】</b> (Valid: {v_time})")
+                        logs.append(f"・検出地域: {found_region}")
+                        logs.append(f"・抽出RGBA: <code>{found_pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
+                    else:
+                        logs.append(f"<b>【{layer_name}】</b>: 全国テスト地域で雨雲ピクセルなし<br>")
         except Exception as e:
-            logs.append(f"❌ N2取得エラー: {e}")
+            logs.append(f"❌ {layer_name} 抽出エラー: {e}<br>")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 Step 2 精度検証結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 Step 3 検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
