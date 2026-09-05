@@ -2,6 +2,7 @@ import os
 import sys
 import math
 import json
+import uuid
 import requests
 import jpholiday
 from datetime import datetime, timezone, timedelta
@@ -50,7 +51,6 @@ def save_state(rain_val, rank):
         json.dump(data, f)
 
 def init_state_file():
-    # 休日等で実行された際にGitエラーになるのを防ぐため、ファイルが無ければ空枠を作る
     if not os.path.exists(STATE_FILE):
         save_state(0.0, 0)
 
@@ -63,7 +63,6 @@ def load_state():
                 if last_time_str:
                     last_time = datetime.fromisoformat(last_time_str)
                     jst = timezone(timedelta(hours=9))
-                    # 前回記録から1時間以上経過している場合は間隔が空いたためリセット
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
                         return 0.0, 0
                 return float(data.get("last_rain_val", 0.0)), int(data.get("last_rank", 0))
@@ -101,20 +100,21 @@ def rgb_to_rainfall(rgb):
 # 4. Google Chat カード送信処理（CardsV2）
 # ---------------------------------------------------------
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
-    # 気象庁「今後の雨（kaikotan）」ページへ直接移動するURL
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     
-    # 雨のテキスト本体のみ太字にし、(数値 mm/h) は太字を解除する
     if rain_val > 0.0:
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         formatted_text = f"<font color=\"{color_code}\"><b>{msg_text}</b> ({val_str} mm/h)</font>"
     else:
         formatted_text = f"<font color=\"{color_code}\"><b>{msg_text}</b></font>"
     
+    # 重複回避のため、送信ごとにユニークなcardIdを生成
+    unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
+    
     card_payload = {
         "cardsV2": [
             {
-                "cardId": "rainAlertCard",
+                "cardId": unique_card_id,
                 "card": {
                     "header": {
                         "title": title_text,
@@ -157,7 +157,8 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
     }
     
     try:
-        requests.post(webhook_url, json=card_payload, timeout=10)
+        res = requests.post(webhook_url, json=card_payload, timeout=10)
+        print(f"📡 送信ステータス: {res.status_code} ({title_text}: {msg_text})")
     except Exception as e:
         print(f"❌ 送信エラー: {e}")
 
@@ -171,7 +172,6 @@ def test_all_colors():
     lat = float(os.environ.get("TARGET_LAT", "35.681236"))
     lon = float(os.environ.get("TARGET_LON", "139.767125"))
 
-    # 雨が強くなった時(アメデス/Rainy) と 雨が弱くなった時(雨が弱くなりました/Cloud) の全パターン
     test_patterns = [
         ("アメデス", "猛烈な雨", 80.0, "#ab47bc", ICON_RAINY),
         ("アメデス", "非常に激しい雨", 50.0, "#e53935", ICON_RAINY),
@@ -266,15 +266,10 @@ def main():
         )
         save_state(0.0, 0)
         
-    # ③ それ以外（ランクに変化がない場合や、弱まりつつも5.0mm/h以上を維持している場合）は数値とランクの状態更新のみ
+    # ③ それ以外は数値とランクの状態更新のみ
     else:
         save_state(rain_val, current_rank)
 
 
 if __name__ == "__main__":
-    # ダークモード等のテスト実行時は test_all_colors() を実行します。
-    # 本番運用を開始する際は、以下の main() のコメント(#)を外し、
-    # test_all_colors() の先頭に # を付けてコメントアウトしてください。
-    
-    # main()
     test_all_colors()
