@@ -88,7 +88,7 @@ def rgb_to_rainfall(rgb):
     if (r, g, b) == (180, 0, 104):  return "猛烈な雨", 80.0, "#ab47bc", 6
     if (r, g, b) == (255, 0, 0):    return "非常に激しい雨", 50.0, "#e53935", 5
     if (r, g, b) == (255, 106, 0):  return "激しい雨", 30.0, "#f57c00", 4
-    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#f5a623", 3  # ライトモード対応調整色
+    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#f5a623", 3
     if (r, g, b) == (0, 70, 255):   return "やや強い雨", 10.0, "#1e88e5", 2
     if (r, g, b) == (0, 170, 255):  return "雨", 5.0, "#29b6f6", 1
     if (r, g, b) == (100, 200, 255): return "弱雨", 1.0, "#4dd0e1", 0
@@ -102,7 +102,7 @@ def rgb_to_rainfall(rgb):
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     
-    # 太字はテキストのみとし、全角スペースを開けて数値を結合
+    # 太字はテキストのみ、全角スペースで数値を結合
     if rain_val > 0.0:
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         display_msg = f"<b>{msg_text}</b> {val_str} mm/h"
@@ -110,7 +110,6 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
         display_msg = f"<b>{msg_text}</b>"
     
     formatted_text = f"<font color=\"{color_code}\">{display_msg}</font>"
-    
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
     card_payload = {
@@ -135,7 +134,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
                                     "buttonList": {
                                         "buttons": [
                                             {
-                                                "text": "雨雲レーダーを開く",
+                                                "text": "雨雲レーダーを開く｜気象庁",
                                                 "onClick": {
                                                     "openLink": {
                                                         "url": jma_url
@@ -143,11 +142,6 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
                                                 }
                                             }
                                         ]
-                                    }
-                                },
-                                {
-                                    "textParagraph": {
-                                        "text": "<font color=\"#757575\">気象庁</font>"
                                     }
                                 }
                             ]
@@ -244,7 +238,6 @@ def main():
     print(f"📊 前回ランク: {last_rank} (数値:{last_rain_val}) -> 今回ランク: {current_rank} (数値:{rain_val}, {rain_desc})")
 
     # 通知条件判定
-    # ① 5.0mm/h以上で、前回のランクより「雨の強さの区分」が上がった時（降り始め・雨が強くなった時）
     if current_rank >= 1 and current_rank > last_rank:
         send_google_chat_card(
             webhook_url, lat, lon,
@@ -256,7 +249,6 @@ def main():
         )
         save_state(rain_val, current_rank)
         
-    # ② 前回5.0mm/h以上降っていた状態から、5.0mm/h未満になった時（雨が弱まった・本降り終了）
     elif last_rank >= 1 and current_rank == 0:
         send_google_chat_card(
             webhook_url, lat, lon,
@@ -268,7 +260,6 @@ def main():
         )
         save_state(0.0, 0)
         
-    # ③ それ以外は数値とランクの状態更新のみ
     else:
         save_state(rain_val, current_rank)
 
