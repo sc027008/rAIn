@@ -3,6 +3,7 @@ import sys
 import math
 import json
 import uuid
+import random
 import requests
 import urllib.parse
 from datetime import datetime, timezone, timedelta
@@ -567,7 +568,7 @@ def main():
 # =========================================================
 def find_active_rain_location():
     """
-    日本全国の主要候補地および雨雲タイルを探索し、
+    日本全国の主要候補地および雨雲タイルをランダムな順序で探索し、
     現在雨が降っている（rain_val > 0.0）地点の (地名, lat, lon) を返します。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -582,6 +583,8 @@ def find_active_rain_location():
         ("長崎", 32.7503, 129.8777), ("鹿児島", 31.5966, 130.5571), ("奄美", 28.3772, 129.4950),
         ("那覇", 26.2124, 127.6809), ("石垣島", 24.3448, 124.1572)
     ]
+    # 候補リストをシャッフルしてランダム性を確保
+    random.shuffle(candidate_spots)
 
     try:
         url = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
@@ -596,6 +599,7 @@ def find_active_rain_location():
         target = target_times[2]
         basetime, validtime = target["basetime"], target["validtime"]
 
+        # 1. シャッフルされた候補地の走査
         for name, lat, lon in candidate_spots:
             xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
@@ -608,7 +612,10 @@ def find_active_rain_location():
                 if rain_val > 0.0:
                     return f"{name}周辺", lat, lon
 
+        # 2. ピンポイントでヒットしない場合、タイルの画像全ピクセルから雨域セルを検出（こちらもシャッフル）
         scan_tiles = [(901, 404), (905, 402), (895, 410), (890, 415), (910, 395)]
+        random.shuffle(scan_tiles)
+
         for xtile, ytile in scan_tiles:
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
             t_res = requests.get(tile_url, headers=headers, timeout=3)
