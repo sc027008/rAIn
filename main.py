@@ -286,60 +286,118 @@ def parse_jma_time(time_str):
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     """
-    rasrf の targetTimes.json 生メタデータを直接使用し、
-    (basetime, member, validtime) の実在する属性ペアに基づいて直近15コマ（15時間相当）の雨量予測を取得します。
+    1コマごとに HTTP ステータスコード（200, 404, 500等）を個別保持し、
+    正常取得(200)とエラー（通信障害・不整合）の原因を明確に分離します。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
+    details = []  # 1コマごとのレスポンス詳細ログを保持
+
     try:
         url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
         res = requests.get(url_target, headers=headers, timeout=10)
-        if res.status_code != 200:
-            return 0.0, 0.0, [0.0]*15, ""
         
+        if res.status_code != 200:
+            # targetTimes.json 自体の取得失敗
+            for idx in range(1, 16):
+                details.append({
+                    "idx": idx,
+                    "validtime": "----",
+                    "status_code": res.status_code,
+                    "rain_val": None,
+                    "status_desc": f"メタデータ取得失敗 (HTTP {res.status_code})"
+                })
+            return 0.0, 0.0, [0.0]*15, "", details
+
         raw_data = res.json()
         xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
         
         if not raw_data:
-            return 0.0, 0.0, [0.0]*15, ""
+            for idx in range(1, 16):
+                details.append({
+                    "idx": idx,
+                    "validtime": "----",
+                    "status_code": "EMPTY",
+                    "rain_val": None,
+                    "status_desc": "メタデータが空データ"
+                })
+            return 0.0, 0.0, [0.0]*15, "", details
 
-        # elements に 'rasrf' を含み、かつ過去解析以外（basetime != validtime）の未来予報コマを抽出
         valid_frames = [
             item for item in raw_data 
             if "rasrf" in item.get("elements", []) and item.get("basetime") != item.get("validtime")
         ]
         valid_frames.sort(key=lambda x: x["validtime"])
 
-        # 直近15コマ（15時間相当）を確定ターゲットとする
         target_frames = valid_frames[:15]
-
         hourly_rain_list = []
-        for item in target_frames:
+
+        for idx, item in enumerate(target_frames, start=1):
             basetime = item["basetime"]
             validtime = item["validtime"]
             member = item.get("member", "none")
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{basetime}/{member}/{validtime}/surf/rasrf/{zoom}/{xtile}/{ytile}.png"
             
-            t_res = requests.get(tile_url, headers=headers, timeout=5)
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                pixel_color = img.getpixel((px, py))
-                _, rain_val, _, _ = rgb_to_rainfall(pixel_color)
-                hourly_rain_list.append(rain_val)
-            else:
+            try:
+                t_res = requests.get(tile_url, headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel_color = img.getpixel((px, py))
+                    _, rain_val, _, _ = rgb_to_rainfall(pixel_color)
+                    hourly_rain_list.append(rain_val)
+                    details.append({
+                        "idx": idx,
+                        "validtime": validtime,
+                        "status_code": 200,
+                        "rain_val": rain_val,
+                        "status_desc": f"HTTP 200 (正常取得: {rain_val}mm/h)"
+                    })
+                else:
+                    hourly_rain_list.append(0.0)
+                    details.append({
+                        "idx": idx,
+                        "validtime": validtime,
+                        "status_code": t_res.status_code,
+                        "rain_val": None,
+                        "status_desc": f"HTTP {t_res.status_code} (画像エラー)"
+                    })
+            except Exception as req_err:
                 hourly_rain_list.append(0.0)
-        
-        # 配列長が15未満の場合は0.0でパディング
+                details.append({
+                    "idx": idx,
+                    "validtime": validtime,
+                    "status_code": "EXCEPT",
+                    "rain_val": None,
+                    "status_desc": f"通信例外 ({type(req_err).__name__})"
+                })
+
+        # 15コマ未満の不足埋め
         while len(hourly_rain_list) < 15:
+            idx = len(hourly_rain_list) + 1
             hourly_rain_list.append(0.0)
+            details.append({
+                "idx": idx,
+                "validtime": "----",
+                "status_code": "NODATA",
+                "rain_val": None,
+                "status_desc": "該当時間帯のデータ定義なし"
+            })
             
         all_rain = [current_rain_val] + hourly_rain_list
         cum_3h = round(sum(all_rain[:4]), 1)
         cum_15h = round(sum(all_rain), 1)
         chart_url = generate_chart_url(hourly_rain_list, current_rain_val)
         
-        return cum_3h, cum_15h, hourly_rain_list, chart_url
-    except Exception:
-        return 0.0, 0.0, [0.0]*15, ""
+        return cum_3h, cum_15h, hourly_rain_list, chart_url, details
+    except Exception as e:
+        for idx in range(1, 16):
+            details.append({
+                "idx": idx,
+                "validtime": "----",
+                "status_code": "FATAL",
+                "rain_val": None,
+                "status_desc": f"致命的エラー ({e})"
+            })
+        return 0.0, 0.0, [0.0]*15, "", details
 
 def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
@@ -439,7 +497,7 @@ def main():
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
 
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         cum_15h_int = int(cum_15h)
         
@@ -453,7 +511,7 @@ def main():
         sent_amedes_in_this_run = True
 
     elif current_rank == 0 and last_notified_type == "RAINY":
-        _, _, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
         send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
         save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
@@ -462,7 +520,7 @@ def main():
         save_state(rain_val, current_rain_val, last_notified_rank, last_notified_type, last_evening_alert_date)
 
     if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
-        _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_int = int(cum_15h)
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
@@ -472,33 +530,34 @@ def main():
     print("Execution completed successfully.")
 
 # =========================================================
-# 6. 強制データ取得＆Google Chatカード送信テスト関数
+# 6. 原因切り分け用 強制データ取得＆Chat送信テスト関数
 # =========================================================
 def test_forced_notification():
     """
-    稼働時間・休日・雨量閾値などのガード条件をすべてバイパスし、
-    気象庁APIから現在の実況と今後15時間の予測をリアルタイム取得して、
-    QuickChartグラフ付きのカードメッセージを強制的に Google Chat へ送信します。
+    1コマごとに『HTTP 200 (実際の雨量0.0)』か『HTTP 404/5xx/例外 (通信エラー)』かを
+    直接明示してカード送信します。
     """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
 
     if not webhook_url or not lat_str or not lon_str:
-        print("エラー: 必須の環境変数が設定されていません (CHAT_WEBHOOK_URL, TARGET_LAT, TARGET_LON)。")
+        print("エラー: 必須環境変数が設定されていません。")
         return
 
-    lat = float(lat_str)
-    lon = float(lon_str)
+    lat, lon = float(lat_str), float(lon_str)
     zoom = 10
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    print("=== [テスト実行] 気象庁APIデータ強制取得＆Chat送信 ===")
+    # 1. 実況データの切り分け取得
+    current_http_status = "UNKNOWN"
+    current_status_text = ""
+    rain_val = 0.0
+    color_code = "#78909c"
 
-    # 1. 現在の実況データ（nowc）を実際に取得
-    rain_desc, rain_val, color_code, current_rank = "降水なし", 0.0, "#78909c", 0
     try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
+        current_http_status = elem_res.status_code
         if elem_res.status_code == 200:
             target_times = elem_res.json()
             if len(target_times) >= 3:
@@ -507,51 +566,68 @@ def test_forced_notification():
                 xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
                 url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
                 res = requests.get(url, headers=headers, timeout=10)
+                current_http_status = res.status_code
                 if res.status_code == 200:
                     img = Image.open(BytesIO(res.content)).convert("RGBA")
                     pixel_color = img.getpixel((px, py))
-                    rain_desc, rain_val, color_code, current_rank = rgb_to_rainfall(pixel_color)
+                    rain_desc, rain_val, color_code, _ = rgb_to_rainfall(pixel_color)
+                    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+                    current_status_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font> (HTTP 200)"
+                else:
+                    current_status_text = f"<font color=\"#e53935\"><b>[画像取得失敗]</b> HTTP {res.status_code}</font>"
+        else:
+            current_status_text = f"<font color=\"#e53935\"><b>[メタデータ失敗]</b> HTTP {elem_res.status_code}</font>"
     except Exception as e:
-        print(f"nowc取得失敗: {e} (デフォルト値 0.0mm/h で処理を続行します)")
+        current_status_text = f"<font color=\"#e53935\"><b>[通信例外]</b> {type(e).__name__}</font>"
 
-    # 2. 今後15時間の予測データ（rasrf）およびグラフURLを取得
-    cum_3h, cum_15h, hourly_rain_list, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+    # 2. 予測データ 1コマごとの切り分け結果を取得
+    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
 
-    # 3. カード本文メッセージの構築
-    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-    cum_15h_int = int(cum_15h)
+    # 3. 原因切り分けメッセージの組み立て
+    success_200_count = sum(1 for d in details if d["status_code"] == 200)
+    error_count = len(details) - success_200_count
 
-    formatted_text = (
-        f"<b>【強制テスト配信】</b><br>"
-        f"<b>現在地の状況</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-        f"<b>今後15時間積算雨量</b>: {cum_15h_int} mm<br>"
-        f"<b>3時間積算雨量</b>: {cum_3h} mm"
-    )
+    if error_count == 0:
+        summary_header = f"<b>データ取得結果</b>: <font color=\"#2e7d32\">🟢 全15コマ HTTP 200 正常取得 (実際の観測/予測値)</font>"
+    else:
+        summary_header = f"<b>データ取得結果</b>: <font color=\"#e53935\">⚠️ 15コマ中 {error_count}コマ でエラー発生</font>"
 
-    # 4. Google Chat カードの強制送信
+    # 内訳ログの生成
+    logs = [summary_header, f"<b>現在地の状況</b>: {current_status_text}<br>", "<b>【15時間予測 ステータス詳細】</b>"]
+    
+    for d in details:
+        idx = d["idx"]
+        vt = d["validtime"]
+        code = d["status_code"]
+        desc = d["status_desc"]
+        
+        if code == 200:
+            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | <b>{d['rain_val']} mm/h</b>")
+        else:
+            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#e53935\"><b>{desc}</b></font>")
+
+    logs.append(f"<br><b>15時間積算雨量</b>: {int(cum_15h)} mm")
+    formatted_text = "<br>".join(logs)
+
     send_google_chat_card(
         webhook_url=webhook_url,
         lat=lat,
         lon=lon,
-        title_text="🧪 動作テスト (アメデス強制作動)",
+        title_text="🔬 原因切り分け検証配信",
         formatted_text=formatted_text,
         icon_url=ICON_RAINY,
         chart_url=chart_url
     )
 
-    print("実行完了: Google Chat へカードメッセージを送信しました。")
+    print("実行完了: 全コマのHTTPステータスを明示したカードを送信しました。")
 
 # =========================================================
 # 7. スクリプト実行エントリーポイント
 # =========================================================
 if __name__ == "__main__":
     
-    # ---------------------------------------------------------
-    # 実行モード選択
-    # ---------------------------------------------------------
-    
-    # 【本番運用モード】（時間・曜日ガードあり）
+    # 【本番運用モード】
     # main()
     
-    # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信）
+    # 【テスト検証モード】（1コマごとのHTTPステータスを原因切り分け表示）
     test_forced_notification()
