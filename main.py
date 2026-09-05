@@ -264,5 +264,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    test_all_colors()
+    main()
+    # test_all_colors()
