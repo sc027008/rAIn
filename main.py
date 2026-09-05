@@ -60,9 +60,9 @@ def rgb_to_rainfall(rgb):
 # 4. Google Chat CardsV2（カード形式）メッセージ生成処理
 # ---------------------------------------------------------
 def send_google_chat_card(rain_desc, rain_val):
-    jma_url = f"https://www.jma.go.jp/bosai/nowc/#lat:{LAT}/lon:{LON}/zoom:11/colorkind:rain"
+    # 気象庁「今後の雨」ページへ直接移動するURL（colorkind:amemesh）
+    jma_url = f"https://www.jma.go.jp/bosai/nowc/#lat:{LAT}/lon:{LON}/zoom:11/colorkind:amemesh"
     
-    # 日本時間の現在時刻を取得
     jst = timezone(timedelta(hours=9))
     now_jst = datetime.now(jst).strftime("%H:%M")
     
@@ -96,7 +96,7 @@ def send_google_chat_card(rain_desc, rain_val):
                                     "buttonList": {
                                         "buttons": [
                                             {
-                                                "text": "雨雲レーダー（気象庁）を開く",
+                                                "text": "「今後の雨」レーダー（気象庁）を開く",
                                                 "onClick": {
                                                     "openLink": {
                                                         "url": jma_url
@@ -143,7 +143,6 @@ def main():
             sys.exit(1)
         
         target_times = elem_res.json()
-        # 10分後（インデックス2: 0=現在, 1=5分後, 2=10分後）の時刻情報を取得
         target = target_times[2]
         basetime = target["basetime"]
         validtime = target["validtime"]
