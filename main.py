@@ -140,7 +140,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 38 + "折れ線グラフ: 積算雨量 [mm]↓"
+    # タイトル部分（20pt、スペース20個）
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 20 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -184,21 +185,20 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 16, "weight": "bold"}
+                        "font": {"size": 20, "family": "sans-serif", "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
-            # グローバルフォントに Noto Sans JP を指定
-            "defaultFontFamily": "Noto Sans JP",
             "title": {
                 "display": True,
                 "text": title_text,
-                "fontSize": 16,
+                "fontSize": 20,
                 "fontColor": "#111111",
+                "fontFamily": "sans-serif",
                 "fontStyle": "bold",
-                "padding": 10
+                "padding": 12
             },
             "legend": {"display": False},
             "layout": {
@@ -218,14 +218,16 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 20,
+                        "fontSize": 20, # 24ptから20ptへ適正化
                         "fontColor": "#111111",
+                        "fontFamily": "sans-serif",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 15,
+                        "fontSize": 18,
                         "maxRotation": 0,
-                        "fontColor": "#111111"
+                        "fontColor": "#111111",
+                        "fontFamily": "sans-serif"
                     }
                 }],
                 "yAxes": [
@@ -237,8 +239,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 15,
-                            "fontColor": "#111111"
+                            "fontSize": 18,
+                            "fontColor": "#111111",
+                            "fontFamily": "sans-serif"
                         }
                     },
                     {
@@ -249,8 +252,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 15,
-                            "fontColor": "#111111"
+                            "fontSize": 18,
+                            "fontColor": "#111111",
+                            "fontFamily": "sans-serif"
                         },
                         "gridLines": {"drawOnChartArea": True}
                     }
@@ -262,8 +266,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     try:
         payload = {
             "chart": chart_config,
-            "width": 580,
-            "height": 290,
+            "width": 600,
+            "height": 300,
             "backgroundColor": "white",
             "devicePixelRatio": 3
         }
@@ -271,13 +275,13 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         if res.status_code == 200:
             data = res.json()
             if data.get("success") and "url" in data:
-                return data["url"] + "?f=Noto+Sans+JP"
+                return data["url"] + "?f=sans-serif"
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
 
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
-    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3&f=Noto+Sans+JP"
+    return f"https://quickchart.io/chart?c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=sans-serif"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
