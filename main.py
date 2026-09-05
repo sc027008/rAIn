@@ -113,13 +113,10 @@ def get_color_for_value(val):
     return "#e0e0e0"                 # 降水なし（薄いグレー）
 
 def generate_chart_url(hourly_rain_list):
-    """15時間分の雨量配列からQuickChart API用のURLを生成"""
-    labels = [f"{i+1}h" for i in range(len(hourly_rain_list))]
-    
-    # 棒グラフ用のカラー配列を生成
+    """15時間分の雨量配列からQuickChart API用のURLを生成（凡例消去・数値直貼り版）"""
+    labels = [str(i + 1) for i in range(len(hourly_rain_list))]
     bar_colors = [get_color_for_value(val) for val in hourly_rain_list]
     
-    # 積算雨量の計算
     cumulative_rain = []
     total = 0.0
     for r in hourly_rain_list:
@@ -133,39 +130,75 @@ def generate_chart_url(hourly_rain_list):
             "datasets": [
                 {
                     "type": "line",
-                    "label": "積算雨量(mm)",
+                    "label": "積算雨量 (mm)",
                     "data": cumulative_rain,
-                    "borderColor": "#424242", # 折れ線は落ち着いたダークグレーに変更（カラフルな棒と喧嘩しないように）
-                    "borderWidth": 2,
+                    "borderColor": "#d32f2f",
+                    "borderWidth": 3,
+                    "pointRadius": 0,
                     "fill": False,
-                    "yAxisID": "y2"
+                    "yAxisID": "y2",
+                    # 折れ線側は数字を表示しない
+                    "datalabels": {"display": False}
                 },
                 {
                     "type": "bar",
-                    "label": "時間雨量(mm/h)",
+                    "label": "時間雨量 (mm/h)",
                     "data": hourly_rain_list,
-                    "backgroundColor": bar_colors, # ★ここで配列を指定して色を塗り分け
-                    "yAxisID": "y1"
+                    "backgroundColor": bar_colors,
+                    "yAxisID": "y1",
+                    # 棒の上に数値(mm/h)を直貼り
+                    "datalabels": {
+                        "display": "auto",       # 重ならない場合のみ表示
+                        "anchor": "end",
+                        "align": "end",
+                        "offset": -2,
+                        "color": "#333333",
+                        "font": {"size": 11, "family": "Noto Sans", "weight": "bold"},
+                        "formatter": "function(value) { return value >= 1.0 ? value : ''; }" # 1mm以上のみ数字を表示
+                    }
                 }
             ]
         },
         "options": {
-            "title": {"display": True, "text": "今後15時間の雨量予測推移"},
+            "defaultFontFamily": "Noto Sans",
+            "title": {"display": False},
+            "legend": {"display": False}, # ★矛盾の原因となる凡例ボックスを完全消去
+            "plugins": {
+                "datalabels": {
+                    "display": True
+                }
+            },
             "scales": {
+                "xAxes": [{
+                    "scaleLabel": {
+                        "display": True,
+                        "labelString": "経過時間（時間後）",
+                        "fontSize": 12,
+                        "fontColor": "#333333",
+                        "fontFamily": "Noto Sans"
+                    },
+                    "ticks": {
+                        "fontSize": 12,
+                        "maxRotation": 0,
+                        "minRotation": 0,
+                        "fontColor": "#333333",
+                        "fontFamily": "Noto Sans"
+                    }
+                }],
                 "yAxes": [
                     {
                         "id": "y1",
                         "type": "linear",
                         "position": "left",
-                        "ticks": {"beginAtZero": True},
-                        "scaleLabel": {"display": True, "labelString": "mm/h"}
+                        "ticks": {"beginAtZero": True, "fontSize": 12, "fontColor": "#333333", "fontFamily": "Noto Sans"},
+                        "scaleLabel": {"display": True, "labelString": "時間雨量 (mm/h)", "fontSize": 12, "fontColor": "#333333", "fontFamily": "Noto Sans"}
                     },
                     {
                         "id": "y2",
                         "type": "linear",
                         "position": "right",
-                        "ticks": {"beginAtZero": True},
-                        "scaleLabel": {"display": True, "labelString": "積算mm"},
+                        "ticks": {"beginAtZero": True, "fontSize": 12, "fontColor": "#333333", "fontFamily": "Noto Sans"},
+                        "scaleLabel": {"display": True, "labelString": "積算雨量 (mm)", "fontSize": 12, "fontColor": "#d32f2f", "fontFamily": "Noto Sans"}, # 右軸ラベルを赤色に
                         "gridLines": {"drawOnChartArea": False}
                     }
                 ]
@@ -173,7 +206,7 @@ def generate_chart_url(hourly_rain_list):
         }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded}&w=500&h=220&bkg=white"
+    return f"https://quickchart.io/chart?c={encoded}&w=500&h=230&bkg=white&devicePixelRatio=3"
 
 def get_future_cumulative_rain_data(lat, lon, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
