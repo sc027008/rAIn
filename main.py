@@ -11,12 +11,17 @@ from io import BytesIO
 
 STATE_FILE = "state.json"
 
+# 夜間積算雨量（17時〜翌8時）の通知しきい値（mm）
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
+# Google Noto Emoji
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
 ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
 ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
+# ---------------------------------------------------------
+# 1. 稼働時間・休日の判定
+# ---------------------------------------------------------
 def is_operating_time():
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -25,6 +30,9 @@ def is_operating_time():
     if now.month == 1 and 1 <= now.day <= 3: return False
     return True
 
+# ---------------------------------------------------------
+# 2. 状態（state.json）の読み込み・保存・初期化
+# ---------------------------------------------------------
 def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
     jst = timezone(timedelta(hours=9))
     data = {
@@ -68,6 +76,9 @@ def load_state():
             return 0.0, 0, 0, "NONE", "", True
     return 0.0, 0, 0, "NONE", "", True
 
+# ---------------------------------------------------------
+# 3. 座標計算・画像解析・予測積算雨量算出＆グラフURL生成
+# ---------------------------------------------------------
 def latlon_to_tile(lat, lon, zoom=10):
     lat_rad = math.radians(lat)
     n = 2 ** zoom
@@ -109,6 +120,7 @@ def get_nice_step(raw_max, steps=5):
     return math.ceil(raw_step)
 
 def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
+    # 0時間後（ナウキャスト値）を含めた全16要素を作成
     all_rain = [current_rain_val] + hourly_rain_list
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
@@ -135,7 +147,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
             "labels": labels,
             "datasets": [
                 {
-                    # 左軸タイトル用ダミー
+                    # 左軸タイトル（配列を返して確実に3行表示）
                     "type": "line",
                     "label": "dummy_title_left",
                     "data": [y1_max] + [None] * (len(all_rain) - 1),
@@ -154,12 +166,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "color": "#111111",
                         "font": {"size": 15, "family": "LINE Seed JP", "weight": "bold"},
                         "textAlign": "center",
-                        # エラー回避のため標準の \n 文字列指定に変更
-                        "formatter": "function() { return '棒グラフ\\n時間雨量\\n[mm/h]'; }"
+                        "formatter": "function(v, c) { return ['棒グラフ', '時間雨量', '[mm/h]']; }"
                     }
                 },
                 {
-                    # 右軸タイトル用ダミー
+                    # 右軸タイトル（配列を返して確実に3行表示）
                     "type": "line",
                     "label": "dummy_title_right",
                     "data": [None] * (len(all_rain) - 1) + [y2_max],
@@ -178,11 +189,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "color": "#111111",
                         "font": {"size": 15, "family": "LINE Seed JP", "weight": "bold"},
                         "textAlign": "center",
-                        # エラー回避のため標準の \n 文字列指定に変更
-                        "formatter": "function() { return '折れ線グラフ\\n積算雨量\\n[mm]'; }"
+                        "formatter": "function(v, c) { return ['折れ線グラフ', '積算雨量', '[mm]']; }"
                     }
                 },
                 {
+                    # メインの折れ線（深緑）
                     "type": "line",
                     "label": "積算雨量(mm)",
                     "data": cumulative_rain,
@@ -196,6 +207,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "datalabels": {"display": False}
                 },
                 {
+                    # 白縁取り用の太い折れ線
                     "type": "line",
                     "label": "積算雨量_白縁取り",
                     "data": cumulative_rain,
@@ -209,6 +221,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "datalabels": {"display": False}
                 },
                 {
+                    # 棒グラフ
                     "type": "bar",
                     "label": "時間雨量(mm/h)",
                     "data": all_rain,
@@ -221,8 +234,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 14, "family": "Noto Sans", "weight": "bold"},
-                        "formatter": "function(value) { return value >= 1.0 ? value : ''; }"
+                        "font": {"size": 14, "family": "LINE Seed JP", "weight": "bold"},
+                        "formatter": "function(v) { return v >= 1.0 ? v : ''; }"
                     }
                 }
             ]
@@ -298,7 +311,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    # LINE Seed JP をURLパラメータ経由で事前取得
     return f"https://quickchart.io/chart?c={encoded}&w=560&h=290&bkg=white&devicePixelRatio=3&f=LINE+Seed+JP"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
