@@ -102,13 +102,17 @@ def rgb_to_rainfall(rgb):
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     
+    # 降水がある場合（rain_val > 0.0）のみ数値 (◯ mm/h) を併記し、太字は本文テキストのみに適用
+    # 「降水なし（rain_val == 0.0）」の場合は数値併記なし
     if rain_val > 0.0:
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-        formatted_text = f"<font color=\"{color_code}\"><b>{msg_text}</b> ({val_str} mm/h)</font>"
+        display_msg = f"<b>{msg_text}</b> ({val_str} mm/h)"
     else:
-        formatted_text = f"<font color=\"{color_code}\"><b>{msg_text}</b></font>"
+        display_msg = f"<b>{msg_text}</b>"
     
-    # 重複回避のため、送信ごとにユニークなcardIdを生成
+    formatted_text = f"<font color=\"{color_code}\">{display_msg}</font>"
+    
+    # 送信ごとにユニークなcardIdを生成して連投時の不達・上書きを回避
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
     card_payload = {
