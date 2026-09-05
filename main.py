@@ -13,7 +13,7 @@ STATE_FILE = "state.json"
 
 # Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット不要・ダークモード対応)
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"  # 雨雲
-ICON_CLOUD = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2601.png"   # 雲
+ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png" # 虹
 
 
 # ---------------------------------------------------------
@@ -102,7 +102,6 @@ def rgb_to_rainfall(rgb):
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     
-    # 太字はテキストのみ、全角スペースで数値を結合
     if rain_val > 0.0:
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         display_msg = f"<b>{msg_text}</b> {val_str} mm/h"
@@ -175,9 +174,9 @@ def test_all_colors():
         ("アメデス", "強い雨", 20.0, "#f5a623", ICON_RAINY),
         ("アメデス", "やや強い雨", 10.0, "#1e88e5", ICON_RAINY),
         ("アメデス", "雨", 5.0, "#29b6f6", ICON_RAINY),
-        ("雨が弱くなります", "弱雨", 1.0, "#4dd0e1", ICON_CLOUD),
-        ("雨が弱くなります", "わずかな降水", 0.5, "#90a4ae", ICON_CLOUD),
-        ("雨が弱くなります", "降水なし", 0.0, "#78909c", ICON_CLOUD),
+        ("雨が弱くなります", "弱雨", 1.0, "#4dd0e1", ICON_RAINBOW),
+        ("雨が弱くなります", "わずかな降水", 0.5, "#90a4ae", ICON_RAINBOW),
+        ("雨が弱くなります", "降水なし", 0.0, "#78909c", ICON_RAINBOW),
     ]
 
     print("🧪 全9パターンの表示テストメッセージを送信中...")
@@ -256,7 +255,7 @@ def main():
             msg_text=rain_desc,
             rain_val=rain_val,
             color_code=color_code,
-            icon_url=ICON_CLOUD
+            icon_url=ICON_RAINBOW
         )
         save_state(0.0, 0)
         
@@ -265,5 +264,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    # test_all_colors()
+    # main()
+    test_all_colors()
