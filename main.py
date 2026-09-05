@@ -498,100 +498,51 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    目標時刻を毎時00分（整時）に正規化し、
-    nowc(直近1h) と rasrf(+1h〜+15h) の15時間全コマ連続取得を検証します。
+    気象庁JMAタイルシステムで提供されている全データ種別（要素名）を
+    APIメタデータから直接取得し、現実に存在する要素を一覧表示します。
     """
-    import math
-    import os
-    import requests
-    from io import BytesIO
-    from PIL import Image
-    from datetime import datetime, timezone, timedelta
-
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
-    if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+    if not webhook_url:
+        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>📊 15時間整時マッチング 最終検証</b><br>"]
+    logs = ["<b>🔍 気象庁JMAタイル 全提供要素・エンドポイント調査</b><br>"]
 
-    JMA_COMPLETE_PALETTE = [
-        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
-        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
-        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
-        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
-        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
-        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
-        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
-        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
+    # 気象庁のタイル定義メタデータおよび代表的JSONの確認
+    meta_urls = [
+        ("nowc targetTimes", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"),
+        ("rasrf targetTimes", "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"),
     ]
 
-    def local_rgb_to_rainfall(pixel):
-        if not pixel or len(pixel) < 3: return "降水なし", 0.0
-        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
-        r, g, b = pixel[:3]
-        min_dist = float("inf")
-        best = ("降水なし", 0.0)
-        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
-            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-            if dist < min_dist:
-                min_dist = dist
-                best = (desc, val)
-        return best
+    found_elements = set()
 
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-
-    try:
-        res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
-        rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
-
-        if not rasrf_times:
-            logs.append("❌ rasrf targetTimes 取得失敗")
-            return
-
-        # rasrf の先頭 basetime を元に「次の毎時00分」から15時間分を算出
-        base_dt = parse_jma_time(rasrf_times[0]["basetime"])
-        # 起点を直近の整時(00分)に合わせる
-        start_dt = base_dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        target_hours = [start_dt + timedelta(hours=i) for i in range(15)]
-
-        for idx, th in enumerate(target_hours, start=1):
-            best_match = None
-            min_diff = float("inf")
-
-            for t in rasrf_times:
-                if "rasrf" in t.get("elements", []):
-                    v_dt = parse_jma_time(t["validtime"])
-                    diff = abs((v_dt - th).total_seconds())
-                    if diff < min_diff:
-                        min_diff = diff
-                        best_match = t
-
-            # 許容誤差を 3600秒（1時間以内）に設定して最も近い整時コマを抽出
-            if best_match and min_diff <= 3600:
-                b_time, v_time = best_match["basetime"], best_match["validtime"]
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-
-                t_res = requests.get(url, headers=headers, timeout=5)
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    desc, val = local_rgb_to_rainfall(pixel)
-                    logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
-                else:
-                    logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
+    for name, url in meta_urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                logs.append(f"<b>【{name}】</b> (取得成功)")
+                if isinstance(data, list) and len(data) > 0:
+                    # 定義されている全 elements を抽出
+                    for item in data[:10]: # 直近10件を走査
+                        elems = item.get("elements", [])
+                        for e in elems:
+                            found_elements.add(f"{name.split()[0]}/{e}")
             else:
-                logs.append(f"・<b>+{idx}h</b> ({th.strftime('%Y%m%d%H%M%00')}): 該当データなし")
+                logs.append(f"<b>【{name}】</b>: HTTP {res.status_code}")
+        except Exception as e:
+            logs.append(f"❌ {name} 取得エラー: {e}")
 
-    except Exception as e:
-        logs.append(f"❌ 実行エラー: {e}")
+    if found_elements:
+        logs.append("<br><b>【現在確認された要素識別子一覧】</b>")
+        for elem in sorted(found_elements):
+            logs.append(f"・<code>{elem}</code>")
+    else:
+        logs.append("<br>❌ 有効な要素識別子が抽出できませんでした。")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 15時間整時マッチング結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 全エンドポイント調査", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
