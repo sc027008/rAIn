@@ -11,12 +11,17 @@ from io import BytesIO
 
 STATE_FILE = "state.json"
 
+# 夜間積算雨量（17時〜翌8時）の通知しきい値（mm）
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
+# Google Noto Emoji
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
 ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
 ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
+# ---------------------------------------------------------
+# 1. 稼働時間・休日の判定
+# ---------------------------------------------------------
 def is_operating_time():
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -25,6 +30,9 @@ def is_operating_time():
     if now.month == 1 and 1 <= now.day <= 3: return False
     return True
 
+# ---------------------------------------------------------
+# 2. 状態（state.json）の読み込み・保存・初期化
+# ---------------------------------------------------------
 def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
     jst = timezone(timedelta(hours=9))
     data = {
@@ -68,6 +76,9 @@ def load_state():
             return 0.0, 0, 0, "NONE", "", True
     return 0.0, 0, 0, "NONE", "", True
 
+# ---------------------------------------------------------
+# 3. 座標計算・画像解析・予測積算雨量算出＆グラフURL生成
+# ---------------------------------------------------------
 def latlon_to_tile(lat, lon, zoom=10):
     lat_rad = math.radians(lat)
     n = 2 ** zoom
@@ -129,8 +140,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # スペースを広げてタイトルを左右両端の軸上に寄せる
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 32 + "折れ線グラフ: 積算雨量 [mm]↓"
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]                 折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -144,7 +154,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "borderColor": "#2e7d32",
                     "borderWidth": 4,
                     "pointRadius": 0,
-                    "pointHoverRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
                     "order": 0,
@@ -157,7 +166,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "borderColor": "white",
                     "borderWidth": 8,
                     "pointRadius": 0,
-                    "pointHoverRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
                     "order": 1,
@@ -176,21 +184,19 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 16, "family": "sans-serif", "weight": "bold"}
+                        "font": {"size": 15, "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
-            "defaultFontFamily": "sans-serif",
             "title": {
                 "display": True,
                 "text": title_text,
-                "fontSize": 15,
+                "fontSize": 14,
                 "fontColor": "#111111",
-                "fontFamily": "sans-serif",
                 "fontStyle": "bold",
-                "padding": 10
+                "padding": 8
             },
             "legend": {"display": False},
             "layout": {
@@ -206,23 +212,18 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
             },
             "scales": {
                 "xAxes": [{
-                    "gridLines": {
-                        "display": False
-                    },
+                    "gridLines": {"display": False},
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 20,
+                        "fontSize": 18,
                         "fontColor": "#111111",
-                        "fontFamily": "sans-serif",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 15,
+                        "fontSize": 14,
                         "maxRotation": 0,
-                        "minRotation": 0,
-                        "fontColor": "#111111",
-                        "fontFamily": "sans-serif"
+                        "fontColor": "#111111"
                     }
                 }],
                 "yAxes": [
@@ -234,9 +235,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 15,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
+                            "fontSize": 14,
+                            "fontColor": "#111111"
                         }
                     },
                     {
@@ -247,21 +247,38 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 15,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
+                            "fontSize": 14,
+                            "fontColor": "#111111"
                         },
-                        "gridLines": {
-                            "drawOnChartArea": True
-                        }
+                        "gridLines": {"drawOnChartArea": True}
                     }
                 ]
             }
         }
     }
-    encoded = urllib.parse.quote(json.dumps(chart_config))
-    # フォント未指定・標準指定によりQuickChartのシステムゴシック体(sans-serif)を使用
-    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3"
+
+    # ★ 対策: Short URL API (POST https://quickchart.io/chart/create) を使用
+    # 長大なJSONを事前にPOSTし、約40文字の短縮URLを取得することでカード破棄を防ぐ
+    try:
+        payload = {
+            "chart": chart_config,
+            "width": 560,
+            "height": 290,
+            "backgroundColor": "white",
+            "devicePixelRatio": 3
+        }
+        res = requests.post("https://quickchart.io/chart/create", json=payload, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("success") and "url" in data:
+                return data["url"]
+    except Exception as e:
+        print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
+
+    # 万が一Short URL発行が失敗した場合の超圧縮GET URL
+    compact_json = json.dumps(chart_config, separators=(',', ':'))
+    encoded = urllib.parse.quote(compact_json)
+    return f"https://quickchart.io/chart?c={encoded}&w=560&h=290&bkg=white&devicePixelRatio=3"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -312,16 +329,10 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     ]
     
     if chart_url:
-        # 正しい公式スキーマに沿って onClick (openLink) を復元
         widgets.append({
             "image": {
                 "imageUrl": chart_url,
-                "altText": "雨量予測グラフ",
-                "onClick": {
-                    "openLink": {
-                        "url": chart_url
-                    }
-                }
+                "altText": "雨量予測グラフ"
             }
         })
         
