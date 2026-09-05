@@ -184,14 +184,14 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 16, "weight": "bold"} # 個別fontFamilyを削除
+                        "font": {"size": 16, "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
-            # ★ グローバルフォント指定（全体へ確実に適用）
-            "defaultFontFamily": "sans-serif",
+            # グローバルフォントに Noto Sans JP を指定
+            "defaultFontFamily": "Noto Sans JP",
             "title": {
                 "display": True,
                 "text": title_text,
@@ -271,13 +271,13 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         if res.status_code == 200:
             data = res.json()
             if data.get("success") and "url" in data:
-                return data["url"] + "?f=sans-serif"
+                return data["url"] + "?f=Noto+Sans+JP"
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
 
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
-    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3&f=sans-serif"
+    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3&f=Noto+Sans+JP"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
