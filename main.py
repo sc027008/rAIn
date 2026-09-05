@@ -140,26 +140,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # 上部に「↓」を含むタイトルを左揃え・右揃えで描画
-    draw_top_titles_js = """function(chart) {
-        try {
-            var ctx = chart.ctx;
-            ctx.save();
-            ctx.font = "bold 14px sans-serif";
-            ctx.fillStyle = "#111111";
-            ctx.textBaseline = "bottom";
-            var top = chart.chartArea.top - 8;
-            
-            ctx.textAlign = "left";
-            ctx.fillText("↓棒グラフ: 時間雨量 [mm/h]", chart.chartArea.left, top);
-            
-            ctx.textAlign = "right";
-            ctx.fillText("折れ線グラフ: 積算雨量 [mm]↓", chart.chartArea.right, top);
-            
-            ctx.restore();
-        } catch(e) {}
-    }"""
-
     chart_config = {
         "type": "bar",
         "data": {
@@ -207,19 +187,27 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 14, "weight": "bold"},
-                        "formatter": "function(v) { return v >= 1.0 ? v : ''; }"
+                        "font": {"size": 14, "family": "Noto Sans JP", "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
-            "defaultFontFamily": "sans-serif",
-            "title": {"display": False},
+            "defaultFontFamily": "Noto Sans JP",
+            # ★ 確実に画像描画される標準タイトル機能を利用（矢印「↓」入り）
+            "title": {
+                "display": True,
+                "text": "↓棒グラフ: 時間雨量 [mm/h]                 折れ線グラフ: 積算雨量 [mm]↓",
+                "fontSize": 14,
+                "fontColor": "#111111",
+                "fontFamily": "Noto Sans JP",
+                "fontStyle": "bold",
+                "padding": 8
+            },
             "legend": {"display": False},
             "layout": {
                 "padding": {
-                    "top": 35,
+                    "top": 5,
                     "left": 10,
                     "right": 10,
                     "bottom": 5
@@ -238,13 +226,15 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "labelString": "時間後",
                         "fontSize": 18,
                         "fontColor": "#111111",
+                        "fontFamily": "Noto Sans JP",
                         "fontStyle": "bold"
                     },
                     "ticks": {
                         "fontSize": 14,
                         "maxRotation": 0,
                         "minRotation": 0,
-                        "fontColor": "#111111"
+                        "fontColor": "#111111",
+                        "fontFamily": "Noto Sans JP"
                     }
                 }],
                 "yAxes": [
@@ -257,7 +247,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "max": y1_max,
                             "stepSize": step_y1,
                             "fontSize": 14,
-                            "fontColor": "#111111"
+                            "fontColor": "#111111",
+                            "fontFamily": "Noto Sans JP"
                         }
                     },
                     {
@@ -269,7 +260,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "max": y2_max,
                             "stepSize": step_y2,
                             "fontSize": 14,
-                            "fontColor": "#111111"
+                            "fontColor": "#111111",
+                            "fontFamily": "Noto Sans JP"
                         },
                         "gridLines": {
                             "drawOnChartArea": True
@@ -277,13 +269,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     }
                 ]
             }
-        },
-        "plugins": [
-            {
-                "id": "topHeaderTitles",
-                "beforeDraw": draw_top_titles_js
-            }
-        ]
+        }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
     return f"https://quickchart.io/chart?c={encoded}&w=560&h=290&bkg=white&devicePixelRatio=3&f=Noto+Sans+JP"
