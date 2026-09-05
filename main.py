@@ -514,9 +514,12 @@ def local_rgb_to_rainfall(pixel):
 
 def test_real_api_fetch():
     """
-    メタデータから存在する member 値を自動検出し、
-    15時間分の降水予報データを確実に取得・評価します。
+    rasrf/targetTimes.json の中身を推測・フィルター・検索処理を一切行わずに
+    生のメタデータ（basetime, validtime, member, elements）としてそのまま全件出力します。
     """
+    import os
+    import requests
+
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -524,83 +527,38 @@ def test_real_api_fetch():
         print("Execution finished (Missing env vars).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>📊 15時間全予報 自動フォールバック一括取得結果</b><br>"]
-
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+    logs = ["<b>🔍 rasrf/targetTimes.json 生データ全件ダンプ結果</b><br>"]
 
     try:
-        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
-        res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
-
-        n2_times = res_n2.json() if res_n2.status_code == 200 else []
-        rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
-
-        # 1. メタデータ内に存在する member 値の動的抽出・検出
-        detected_members = set()
-        for item in n2_times + rasrf_times:
-            if "member" in item:
-                detected_members.add(item["member"])
+        url = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
+        res = requests.get(url, headers=headers, timeout=5)
         
-        # 検出された member 値を記録（既知の基本値も補完）
-        member_candidates_base = list(detected_members) + [m for m in ["none", "immed"] if m not in detected_members]
-        logs.append(f"<b>【検出された member 値】</b>: {', '.join(detected_members) if detected_members else 'なし(デフォルト適用)'}<br>")
-
-        now_jst = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
-        start_dt = now_jst + timedelta(hours=1)
-        target_hours = [start_dt + timedelta(hours=i) for i in range(15)]
-
-        for idx, th in enumerate(target_hours, start=1):
-            best_match = None
-            min_diff = float("inf")
-            target_layer = "nowc" if idx == 1 else "rasrf"
-            source_list = n2_times if idx == 1 else rasrf_times
-
-            for t in source_list:
-                if target_layer == "nowc" or "rasrf" in t.get("elements", []):
-                    v_dt = local_parse_time(t["validtime"])
-                    diff = abs((v_dt - th).total_seconds())
-                    if diff < min_diff:
-                        min_diff = diff
-                        best_match = t
-
-            if best_match:
-                b_time, v_time = best_match["basetime"], best_match["validtime"]
+        if res.status_code == 200:
+            data = res.json()
+            logs.append(f"<b>総件数</b>: {len(data)} 件<br>")
+            
+            # 生のデータをそのまま全件フォーマット（一切の処理を行わない）
+            for i, item in enumerate(data, start=1):
+                b = item.get("basetime", "なし")
+                v = item.get("validtime", "なし")
+                m = item.get("member", "なし(未定義)")
+                e = ",".join(item.get("elements", []))
                 
-                # メタデータ指定の member を最優先にする試行リスト構築
-                meta_member = best_match.get("member")
-                candidates = [meta_member] if meta_member else []
-                for m in member_candidates_base:
-                    if m not in candidates:
-                        candidates.append(m)
-
-                elem = best_match.get("elements", ["hrpns" if target_layer == "nowc" else "rasrf"])[0]
-                success = False
-
-                # 検出された member 候補を順次走査してタイル取得
-                for member in candidates:
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/{target_layer}/{b_time}/{member}/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                    t_res = requests.get(tile_url, headers=headers, timeout=5)
-                    
-                    if t_res.status_code == 200:
-                        img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                        pixel = img.getpixel((px, py))
-                        desc, val = local_rgb_to_rainfall(pixel)
-                        logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time} | Member:{member}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
-                        success = True
-                        break
-
-                if not success:
-                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): <font color=\"red\">HTTP 404 (全Member試行失敗)</font>")
-            else:
-                logs.append(f"・<b>+{idx}h</b> ({th.strftime('%Y%m%d%H%M00')}): 該当データなし")
+                logs.append(f"[{i:03d}] Valid: <b>{v}</b> | Base: <code>{b}</code> | Member: <code>{m}</code> | Elem: <code>{e}</code>")
+        else:
+            logs.append(f"❌ JSON取得失敗: HTTP {res.status_code}")
 
     except Exception as e:
         logs.append(f"❌ 実行エラー: {e}")
 
-    debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "📊 15時間全予報 取得結果", debug_text, ICON_RAINY)
+    # メッセージ長制限のため上位50件を出力
+    debug_text = "<br>".join(logs[:52])
+    if len(logs) > 52:
+        debug_text += f"<br>...他 {len(logs)-52} 件省略"
+
+    lat, lon = float(lat_str), float(lon_str)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 生メタデータ調査ログ", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
