@@ -498,67 +498,42 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    rasrf 単体で最新の basetime に基づき、+1h〜+15h の 15コマが
-    HTTP 404 なしで取得できるかを検証します。
+    nowc (N2) および rasrf の targetTimes.json に含まれる
+    すべての validtime と basetime を生のまま出力し、存在する時間を可視化します。
     """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
-    if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+    if not webhook_url:
+        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 rasrf 15時間単体マッピング診断</b><br>"]
-
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+    logs = ["<b>🔍 API生データ 存在する全時刻リスト</b><br>"]
 
     try:
-        res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
-        if res.status_code == 200:
-            target_times = res.json()
-            # 最新の basetime を持つ要素グループを特定
-            latest_basetime = target_times[0]["basetime"]
-            logs.append(f"<b>【最新 Basetime】</b>: <code>{latest_basetime}</code><br>")
+        # N2 の全 validtime
+        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
+        if res_n2.status_code == 200:
+            n2_data = res_n2.json()
+            n2_valids = [f"{d['basetime']} -> {d['validtime']}" for d in n2_data]
+            logs.append("<b>【N2 (nowc) 保持データ一覧】</b>")
+            logs.append("<br>".join(n2_valids[:5])) # 長さ節約のため先頭・末尾のみ
+            logs.append(f"... (全{len(n2_data)}件) ...")
+            logs.append("<br>".join(n2_valids[-3:]) + "<br>")
 
-            base_dt = parse_jma_time(latest_basetime)
-            # +1時間後 〜 +15時間後の毎時00分を目標時刻に設定
-            target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
-
-            for idx, th in enumerate(target_hours, start=1):
-                best_match = None
-                min_diff = float("inf")
-
-                # 最新の basetime と同一のデータから validtime を検索
-                for t in target_times:
-                    if t["basetime"] == latest_basetime and "rasrf" in t.get("elements", []):
-                        v_dt = parse_jma_time(t["validtime"])
-                        diff = abs((v_dt - th).total_seconds())
-                        if diff < min_diff:
-                            min_diff = diff
-                            best_match = t
-
-                if best_match and min_diff < 1800:
-                    v_time = best_match["validtime"]
-                    url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{latest_basetime}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                    
-                    t_res = requests.get(url, headers=headers, timeout=5)
-                    if t_res.status_code == 200:
-                        img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                        pixel = img.getpixel((px, py))
-                        desc, val, _, _ = rgb_to_rainfall(pixel)
-                        logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{desc} ({val}mm/h)</b>")
-                    else:
-                        logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
-                else:
-                    logs.append(f"・<b>+{idx}h</b>: マッチなし")
+        # rasrf の全 validtime
+        res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
+        if res_rasrf.status_code == 200:
+            rasrf_data = res_rasrf.json()
+            rasrf_valids = [f"Base:{d['basetime']} | Valid:{d['validtime']}" for d in rasrf_data if "rasrf" in d.get("elements", [])]
+            logs.append("<b>【rasrf 保持データ一覧】</b>")
+            logs.append("<br>".join(rasrf_valids[:10]))
+            logs.append(f"... (全{len(rasrf_valids)}件)")
 
     except Exception as e:
-        logs.append(f"❌ 診断実行エラー: {e}")
+        logs.append(f"❌ 診断エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 rasrf 15時間診断結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 API全時刻生リスト", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
