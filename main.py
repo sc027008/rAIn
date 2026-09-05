@@ -11,17 +11,12 @@ from io import BytesIO
 
 STATE_FILE = "state.json"
 
-# 夜間積算雨量（17時〜翌8時）の通知しきい値（mm）
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
-# Google Noto Emoji
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
 ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
 ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
-# ---------------------------------------------------------
-# 1. 稼働時間・休日の判定
-# ---------------------------------------------------------
 def is_operating_time():
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -30,9 +25,6 @@ def is_operating_time():
     if now.month == 1 and 1 <= now.day <= 3: return False
     return True
 
-# ---------------------------------------------------------
-# 2. 状態（state.json）の読み込み・保存・初期化
-# ---------------------------------------------------------
 def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
     jst = timezone(timedelta(hours=9))
     data = {
@@ -76,9 +68,6 @@ def load_state():
             return 0.0, 0, 0, "NONE", "", True
     return 0.0, 0, 0, "NONE", "", True
 
-# ---------------------------------------------------------
-# 3. 座標計算・画像解析・予測積算雨量算出＆グラフURL生成
-# ---------------------------------------------------------
 def latlon_to_tile(lat, lon, zoom=10):
     lat_rad = math.radians(lat)
     n = 2 ** zoom
@@ -140,18 +129,20 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
+    # スペース数を拡張し、両端の軸の真上まで寄せる
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 28 + "折れ線グラフ: 積算雨量 [mm]↓"
+
     chart_config = {
         "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [
                 {
-                    # メインの折れ線（深緑）
                     "type": "line",
                     "label": "積算雨量(mm)",
                     "data": cumulative_rain,
                     "borderColor": "#2e7d32",
-                    "borderWidth": 3.5,
+                    "borderWidth": 4,
                     "pointRadius": 0,
                     "pointHoverRadius": 0,
                     "fill": False,
@@ -160,12 +151,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "datalabels": {"display": False}
                 },
                 {
-                    # 白縁取り用の太い折れ線
                     "type": "line",
                     "label": "積算雨量_白縁取り",
                     "data": cumulative_rain,
                     "borderColor": "white",
-                    "borderWidth": 7.5,
+                    "borderWidth": 8,
                     "pointRadius": 0,
                     "pointHoverRadius": 0,
                     "fill": False,
@@ -174,7 +164,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "datalabels": {"display": False}
                 },
                 {
-                    # 棒グラフ
                     "type": "bar",
                     "label": "時間雨量(mm/h)",
                     "data": all_rain,
@@ -187,22 +176,21 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 14, "family": "Noto Sans JP", "weight": "bold"}
+                        "font": {"size": 18, "family": "sans-serif", "weight": "bold"} # 数値特大化 (18pt)
                     }
                 }
             ]
         },
         "options": {
-            "defaultFontFamily": "Noto Sans JP",
-            # ★ 確実に画像描画される標準タイトル機能を利用（矢印「↓」入り）
+            "defaultFontFamily": "sans-serif",
             "title": {
                 "display": True,
-                "text": "↓棒グラフ: 時間雨量 [mm/h]                 折れ線グラフ: 積算雨量 [mm]↓",
-                "fontSize": 14,
+                "text": title_text,
+                "fontSize": 18,                       # タイトル特大化 (18pt)
                 "fontColor": "#111111",
-                "fontFamily": "Noto Sans JP",
+                "fontFamily": "sans-serif",          # 確実にゴシック描画される標準指定
                 "fontStyle": "bold",
-                "padding": 8
+                "padding": 10
             },
             "legend": {"display": False},
             "layout": {
@@ -224,17 +212,17 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 18,
+                        "fontSize": 22,               # 下部ラベル特大化 (22pt)
                         "fontColor": "#111111",
-                        "fontFamily": "Noto Sans JP",
+                        "fontFamily": "sans-serif",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 14,
+                        "fontSize": 16,               # 横軸数値特大化 (16pt)
                         "maxRotation": 0,
                         "minRotation": 0,
                         "fontColor": "#111111",
-                        "fontFamily": "Noto Sans JP"
+                        "fontFamily": "sans-serif"
                     }
                 }],
                 "yAxes": [
@@ -246,9 +234,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 14,
+                            "fontSize": 16,           # 縦軸数値特大化 (16pt)
                             "fontColor": "#111111",
-                            "fontFamily": "Noto Sans JP"
+                            "fontFamily": "sans-serif"
                         }
                     },
                     {
@@ -259,9 +247,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 14,
+                            "fontSize": 16,           # 縦軸数値特大化 (16pt)
                             "fontColor": "#111111",
-                            "fontFamily": "Noto Sans JP"
+                            "fontFamily": "sans-serif"
                         },
                         "gridLines": {
                             "drawOnChartArea": True
@@ -272,7 +260,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded}&w=560&h=290&bkg=white&devicePixelRatio=3&f=Noto+Sans+JP"
+    return f"https://quickchart.io/chart?c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -323,10 +311,16 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     ]
     
     if chart_url:
+        # ★ 画像タップでブラウザ直接表示（ピンチズーム拡大可能）
         widgets.append({
             "image": {
                 "imageUrl": chart_url,
-                "altText": "雨量予測グラフ"
+                "altText": "雨量予測グラフ",
+                "onClick": {
+                    "openLink": {
+                        "url": chart_url
+                    }
+                }
             }
         })
         
