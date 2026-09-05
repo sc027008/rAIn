@@ -122,7 +122,7 @@ def get_nice_step(raw_max, steps=5):
     return math.ceil(raw_step)
 
 def generate_chart_url(hourly_rain_list):
-    """15時間分の雨量配列からQuickChart API用のURLを生成（Google Fonts: BIZ UDPGothic完全適用版）"""
+    """15時間分の雨量配列からQuickChart API用のURLを生成（上部余白最小化版）"""
     labels = [str(i + 1) for i in range(len(hourly_rain_list))]
     bar_colors = [get_color_for_value(val) for val in hourly_rain_list]
     
@@ -132,15 +132,15 @@ def generate_chart_url(hourly_rain_list):
         total += r
         cumulative_rain.append(round(total, 1))
 
-    # 左右軸の目盛り線同期 ＆ 上部数値見切れ防止計算
+    # 左右軸の目盛り線同期 ＆ スケール余白率の最適化（1.3倍➔1.2倍へ縮小）
     max_bar = max(hourly_rain_list) if hourly_rain_list else 0.0
     max_cum = cumulative_rain[-1] if cumulative_rain else 0.0
 
     steps = 5
-    step_y1 = get_nice_step(max(max_bar * 1.3, 10.0), steps)
+    step_y1 = get_nice_step(max(max_bar * 1.2, 10.0), steps)
     y1_max = step_y1 * steps
 
-    step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
+    step_y2 = get_nice_step(max(max_cum * 1.08, 10.0), steps)
     y2_max = step_y2 * steps
 
     chart_config = {
@@ -172,7 +172,7 @@ def generate_chart_url(hourly_rain_list):
                         "align": "end",
                         "offset": -2,
                         "color": "#212121",
-                        "font": {"size": 12, "family": "Noto Sans", "weight": "bold"},
+                        "font": {"size": 11, "family": "Noto Sans", "weight": "bold"},
                         "formatter": "function(value) { return value >= 1.0 ? value : ''; }"
                     }
                 }
@@ -180,14 +180,22 @@ def generate_chart_url(hourly_rain_list):
         },
         "options": {
             "defaultFontFamily": "Noto Sans",
-            "title": {"display": False},
+            "title": {
+                "display": True,
+                "text": "棒：時間雨量 [mm/h] (左軸)   |   折れ線：積算雨量 [mm] (右軸)",
+                "fontSize": 14,
+                "fontColor": "#212121",
+                "fontFamily": "BIZ UDPGothic",
+                "fontStyle": "bold",
+                "padding": 4  # ★タイトルの余白を12pt➔4ptへ極小化
+            },
             "legend": {"display": False},
             "layout": {
                 "padding": {
-                    "top": 55,    # 縦軸タイトル用の上部余白
-                    "left": 20,   # 端の見切れ防止余白
-                    "right": 20,
-                    "bottom": 5
+                    "top": 0,   # ★レイアウト上部余白を0へ削減
+                    "left": 5,
+                    "right": 5,
+                    "bottom": 0
                 }
             },
             "plugins": {
@@ -195,16 +203,19 @@ def generate_chart_url(hourly_rain_list):
             },
             "scales": {
                 "xAxes": [{
+                    "gridLines": {
+                        "display": False
+                    },
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 13,
+                        "fontSize": 15,
                         "fontColor": "#212121",
-                        "fontFamily": "BIZ UDPGothic",  # ★Google Fontsロード用指定
-                        "fontStyle": "bold"            # ★軸ラベル太字化
+                        "fontFamily": "BIZ UDPGothic",
+                        "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 13,
+                        "fontSize": 12,
                         "maxRotation": 0,
                         "minRotation": 0,
                         "fontColor": "#212121",
@@ -216,11 +227,6 @@ def generate_chart_url(hourly_rain_list):
                         "id": "y1",
                         "type": "linear",
                         "position": "left",
-                        "scaleLabel": {
-                            "display": True,
-                            "labelString": "",
-                            "fontFamily": "BIZ UDPGothic"  # ★Google Fontsロード用指定
-                        },
                         "ticks": {
                             "min": 0,
                             "max": y1_max,
@@ -234,11 +240,6 @@ def generate_chart_url(hourly_rain_list):
                         "id": "y2",
                         "type": "linear",
                         "position": "right",
-                        "scaleLabel": {
-                            "display": True,
-                            "labelString": "",
-                            "fontFamily": "BIZ UDPGothic"  # ★Google Fontsロード用指定
-                        },
                         "ticks": {
                             "min": 0,
                             "max": y2_max,
@@ -247,42 +248,17 @@ def generate_chart_url(hourly_rain_list):
                             "fontColor": "#212121",
                             "fontFamily": "Noto Sans"
                         },
-                        "gridLines": {"drawOnChartArea": False}
+                        "gridLines": {
+                            "drawOnChartArea": True
+                        }
                     }
                 ]
             }
-        },
-        "plugins": [
-            {
-                "id": "customYTitles",
-                "beforeDraw": """function(chart) {
-                    var ctx = chart.ctx;
-                    ctx.save();
-                    ctx.font = "bold 13px 'BIZ UDPGothic', sans-serif";
-                    ctx.fillStyle = "#212121";
-                    ctx.textAlign = "center";
-                    
-                    var top = chart.chartArea.top - 46;
-                    var left = chart.chartArea.left - 10;
-                    var right = chart.chartArea.right + 10;
-                    
-                    // 左軸タイトル（横書き3行・太字・BIZ UDPGothic）
-                    ctx.fillText("棒グラフ", left, top);
-                    ctx.fillText("時間雨量", left, top + 15);
-                    ctx.fillText("[mm/h]", left, top + 30);
-                    
-                    // 右軸タイトル（横書き3行・太字・BIZ UDPGothic）
-                    ctx.fillText("折れ線グラフ", right, top);
-                    ctx.fillText("積算雨量", right, top + 15);
-                    ctx.fillText("[mm]", right, top + 30);
-                    
-                    ctx.restore();
-                }"""
-            }
-        ]
+        }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded}&w=520&h=260&bkg=white&devicePixelRatio=3"
+    # ★画像の高さ自体を260px➔230pxに絞って上下の隙間を圧縮
+    return f"https://quickchart.io/chart?c={encoded}&w=520&h=230&bkg=white&devicePixelRatio=3"
 
 def get_future_cumulative_rain_data(lat, lon, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
