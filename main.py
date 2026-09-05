@@ -10,9 +10,9 @@ from io import BytesIO
 
 STATE_FILE = "state.json"
 
-# ダークモード/ライトモード両対応の白縁取りアイコン（商用フリー・パブリックドメイン/オープンライセンス）
-ICON_RAINY = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f327.png"  # 雨雲アイコン
-ICON_CLOUD = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2601.png"   # 雲アイコン
+# Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット表記不要・ダークモード対応)
+ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"  # 雨雲
+ICON_CLOUD = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2601.png"   # 雲
 
 
 # ---------------------------------------------------------
@@ -55,7 +55,7 @@ def load_state():
                 data = json.load(f)
                 last_time_str = data.get("last_updated", "")
                 if last_time_str:
-                    last_time = datetime.now().fromisoformat(last_time_str)
+                    last_time = datetime.fromisoformat(last_time_str)
                     jst = timezone(timedelta(hours=9))
                     # 前回記録から1時間以上経過している場合は間隔が空いたためリセット
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
@@ -92,11 +92,11 @@ def rgb_to_rainfall(rgb):
     r, g, b = rgb[:3]
     # ダークモード/ライトモード視認性調整済みのカラーコード
     # 返り値: (テキスト表現, 数値(mm/h), カラーコード, 危険度ランク)
-    if (r, g, b) == (180, 0, 104):  return "猛烈な雨", 80.0, "#ab47bc", 6        # マゼンタ系紫（視認性向上）
+    if (r, g, b) == (180, 0, 104):  return "猛烈な雨", 80.0, "#ab47bc", 6        # マゼンタ系紫
     if (r, g, b) == (255, 0, 0):    return "非常に激しい雨", 50.0, "#e53935", 5 # 鮮やかな赤
     if (r, g, b) == (255, 106, 0):  return "激しい雨", 30.0, "#f57c00", 4       # ビビッドオレンジ
-    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#fbc02d", 3         # 明るいイエローオレンジ
-    if (r, g, b) == (0, 70, 255):   return "やや強い雨", 10.0, "#1e88e5", 2     # 明るめのブルー
+    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#fbc02d", 3         # 明るいイエロー
+    if (r, g, b) == (0, 70, 255):   return "やや強い雨", 10.0, "#1e88e5", 2     # ブルー
     if (r, g, b) == (0, 170, 255):  return "雨", 5.0, "#29b6f6", 1              # ライトブルー
     if (r, g, b) == (100, 200, 255): return "弱雨", 1.0, "#4dd0e1", 0           # シアン
     if (r, g, b) == (200, 230, 255): return "わずかな降水", 0.5, "#90a4ae", 0   # グレー
@@ -107,6 +107,7 @@ def rgb_to_rainfall(rgb):
 # 4. Google Chat カード送信処理（CardsV2）
 # ---------------------------------------------------------
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
+    # 確実に「今後の雨（colorkind:amemesh）」ページを開くURL
     jma_url = f"https://www.jma.go.jp/bosai/nowc/#lat:{lat}/lon:{lon}/zoom:11/colorkind:amemesh"
     
     # 降水がある場合のみ数値 (◯ mm/h) を半角スペース付きで併記
@@ -149,7 +150,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
                                 },
                                 {
                                     "textParagraph": {
-                                        # ダークモード対応かつ最小フォント指定
+                                        # 最少主張表記（色: #9e9e9e）
                                         "text": "<font color=\"#9e9e9e\"><sub>出典: 気象庁</sub></font>"
                                     }
                                 }
