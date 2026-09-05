@@ -124,6 +124,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
     
+    # 0.5mm未満（雨なし）のデータはラベル表示を False にして確実に消去
     datalabel_display = [val >= 0.5 for val in all_rain]
     
     cumulative_rain = []
@@ -144,7 +145,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 
     title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 5 + "折れ線グラフ: 積算雨量 [mm]↓"
 
-    # Chart.js v4 構文へ更新
+    # Chart.js v4 構文
     chart_config = {
         "type": "bar",
         "data": {
@@ -180,7 +181,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "label": "時間雨量(mm/h)",
                     "data": all_rain,
                     "backgroundColor": bar_colors,
-                    "borderRadius": 6,  # v4 で動作する角丸設定
+                    "borderRadius": 6,  # v4 で機能する棒の角丸設定
                     "yAxisID": "y1",
                     "order": 2,
                     "datalabels": {
@@ -265,7 +266,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     }
 
     try:
-        # payload に "version": "4" を明示指定して v4 レンダーエンジンを起動
+        # payload に "version": "4" を指定して Short URL を発行（フォント指定もJSON内に含むため末尾結合は不要）
         payload = {
             "version": "4",
             "chart": chart_config,
@@ -278,7 +279,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         if res.status_code == 200:
             data = res.json()
             if data.get("success") and "url" in data:
-                return data["url"] + "&f=LINE+Seed+JP"
+                return data["url"]  # 正常な短縮URLをそのまま返却
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
 
