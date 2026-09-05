@@ -101,19 +101,17 @@ def rgb_to_rainfall(rgb):
     return "降水なし", 0.0, "#78909c", 0
 
 def get_color_for_value(val):
-    """数値(mm/h)から気象庁カラーのHEXコードを返す（棒グラフ用）"""
-    if val >= 80.0: return "#ab47bc" # 猛烈な雨
-    if val >= 50.0: return "#e53935" # 非常に激しい雨
-    if val >= 30.0: return "#f57c00" # 激しい雨
-    if val >= 20.0: return "#f5a623" # 強い雨
-    if val >= 10.0: return "#1e88e5" # やや強い雨
-    if val >= 5.0:  return "#29b6f6" # 雨
-    if val >= 1.0:  return "#4dd0e1" # 弱雨
-    if val > 0.0:   return "#90a4ae" # わずかな降水
-    return "#e0e0e0"                 # 降水なし（薄いグレー）
+    if val >= 80.0: return "#ab47bc"
+    if val >= 50.0: return "#e53935"
+    if val >= 30.0: return "#f57c00"
+    if val >= 20.0: return "#f5a623"
+    if val >= 10.0: return "#1e88e5"
+    if val >= 5.0:  return "#29b6f6"
+    if val >= 1.0:  return "#4dd0e1"
+    if val > 0.0:   return "#90a4ae"
+    return "#e0e0e0"
 
 def get_nice_step(raw_max, steps=5):
-    """目盛り線がキリの良い数値で指定分割数になるステップ幅を算出"""
     raw_step = raw_max / steps
     nice_steps = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
     for n in nice_steps:
@@ -122,7 +120,6 @@ def get_nice_step(raw_max, steps=5):
     return math.ceil(raw_step)
 
 def generate_chart_url(hourly_rain_list):
-    """15時間分の雨量配列からQuickChart API用のURLを生成（緑線・文字特大版）"""
     labels = [str(i + 1) for i in range(len(hourly_rain_list))]
     bar_colors = [get_color_for_value(val) for val in hourly_rain_list]
     
@@ -132,7 +129,6 @@ def generate_chart_url(hourly_rain_list):
         total += r
         cumulative_rain.append(round(total, 1))
 
-    # 左右軸の目盛り線同期 ＆ 上部見切れ防止計算
     max_bar = max(hourly_rain_list) if hourly_rain_list else 0.0
     max_cum = cumulative_rain[-1] if cumulative_rain else 0.0
 
@@ -143,7 +139,6 @@ def generate_chart_url(hourly_rain_list):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # プラグイン内描画JavaScript（縦軸上部タイトル）
     draw_y_titles_js = """function(chart) {
         var ctx = chart.ctx;
         ctx.save();
@@ -155,12 +150,10 @@ def generate_chart_url(hourly_rain_list):
         var left = chart.chartArea.left - 5;
         var right = chart.chartArea.right + 5;
         
-        // 左軸タイトル（棒グラフ / 時間雨量 / [mm/h]）
         ctx.fillText("棒グラフ", left, top);
         ctx.fillText("時間雨量", left, top + 18);
         ctx.fillText("[mm/h]", left, top + 36);
         
-        // 右軸タイトル（折れ線グラフ / 積算雨量 / [mm]）
         ctx.fillText("折れ線グラフ", right, top);
         ctx.fillText("積算雨量", right, top + 18);
         ctx.fillText("[mm]", right, top + 36);
@@ -174,23 +167,41 @@ def generate_chart_url(hourly_rain_list):
             "labels": labels,
             "datasets": [
                 {
+                    # ★ メインの折れ線（深緑）
                     "type": "line",
                     "label": "積算雨量(mm)",
                     "data": cumulative_rain,
-                    "borderColor": "#2e7d32", # ★折れ線グラフを識別しやすい深緑色に変更
+                    "borderColor": "#2e7d32",
                     "borderWidth": 3.5,
                     "pointRadius": 0,
                     "pointHoverRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
+                    "order": 0,  # 一番手前
                     "datalabels": {"display": False}
                 },
                 {
+                    # ★ 縁取り用の折れ線（白）
+                    "type": "line",
+                    "label": "積算雨量(mm)_白縁取り",
+                    "data": cumulative_rain,
+                    "borderColor": "white",
+                    "borderWidth": 7.5, # メインより太くする
+                    "pointRadius": 0,
+                    "pointHoverRadius": 0,
+                    "fill": False,
+                    "yAxisID": "y2",
+                    "order": 1,  # メイン線と棒グラフの間
+                    "datalabels": {"display": False}
+                },
+                {
+                    # ★ 棒グラフ
                     "type": "bar",
                     "label": "時間雨量(mm/h)",
                     "data": hourly_rain_list,
                     "backgroundColor": bar_colors,
                     "yAxisID": "y1",
+                    "order": 2,  # 一番奥
                     "datalabels": {
                         "display": "auto",
                         "anchor": "end",
@@ -209,7 +220,7 @@ def generate_chart_url(hourly_rain_list):
             "legend": {"display": False},
             "layout": {
                 "padding": {
-                    "top": 65,   # 縦軸タイトル用の十分なスペース
+                    "top": 65,
                     "left": 10,
                     "right": 10,
                     "bottom": 5
@@ -344,7 +355,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "雨雲レーダーを開く｜気象庁",
+                    "text": "<b>雨雲レーダーを開く</b>｜気象庁", # ★ ボタン内の特定のテキストのみ太字化
                     "onClick": {
                         "openLink": {
                             "url": jma_url
@@ -490,22 +501,18 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    # サンプル用データ（雨量が青→オレンジ→赤→青と変化する推移を再現）
     sample_rain = [2.0, 15.0, 35.0, 50.0, 25.0, 10.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     sample_chart_url = generate_chart_url(sample_rain)
 
-    # テスト1: アメデス
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
         f"<font color=\"#757575\">•今後3時間積算 52 mm<br>•今後15時間積算 143 mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY, sample_chart_url)
 
-    # テスト2: 雨上がりの予感
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
     send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW)
 
-    # テスト3: 今夜アメデス
     text_evening = f"17～翌8時の積算雨量 <b>143 mm</b>"
     send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
 
