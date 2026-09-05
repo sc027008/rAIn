@@ -479,7 +479,8 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    修正されたrasrf抽出ロジックで実データ・グラフを取得し、Google Chatへ送信します。
+    rasrf 15時間分のコマごとに、選択されたbasetime/validtime、
+    HTTPステータス、およびピクセルのRGBA値を直接ログ化して送信します。
     """
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -489,18 +490,55 @@ def test_real_api_fetch():
         print("Execution finished (Missing env vars).")
         return
 
-    lat = float(lat_str)
-    lon = float(lon_str)
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 rasrf 降順補正後の15時間予測検証</b><br>"]
+    logs = ["<b>🔍 rasrf 15コマ別レスポンス詳細ログ</b><br>"]
 
-    # 15時間予測データの取得テスト
-    cum_3h, cum_15h, hourly_rain, chart_url = get_future_cumulative_rain_data(lat, lon, 0.0)
-    logs.append(f"15時間積算: <b>{cum_15h} mm</b>")
-    logs.append(f"毎時予測(15h): <code>{hourly_rain}</code>")
+    try:
+        url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
+        res = requests.get(url_target, headers=headers, timeout=10)
+        
+        if res.status_code != 200:
+            logs.append(f"❌ targetTimes.json 取得失敗: HTTP {res.status_code}")
+        else:
+            target_times = res.json()
+            xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+            base_dt = parse_jma_time(target_times[0]["basetime"])
+            target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
+
+            for idx, th in enumerate(target_hours, start=1):
+                best_match = None
+                min_diff = float("inf")
+                
+                for t in target_times:
+                    if "rasrf" in t.get("elements", []):
+                        v_dt = parse_jma_time(t["validtime"])
+                        diff = abs((v_dt - th).total_seconds())
+                        if diff < min_diff:
+                            min_diff = diff
+                            best_match = t
+
+                if best_match and min_diff < 1800:
+                    b_time = best_match["basetime"]
+                    v_time = best_match["validtime"]
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                    
+                    t_res = requests.get(tile_url, headers=headers, timeout=5)
+                    if t_res.status_code == 200:
+                        img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                        pixel = img.getpixel((px, py))
+                        _, val, _, _ = rgb_to_rainfall(pixel)
+                        logs.append(f"<b>+{idx}h</b> ({v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{val}mm</b>")
+                    else:
+                        logs.append(f"<b>+{idx}h</b> ({v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
+                else:
+                    logs.append(f"<b>+{idx}h</b>: マッチするターゲットなし")
+
+    except Exception as e:
+        logs.append(f"❌ 実行エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🧪 rasrf15時間予測テスト", debug_text, ICON_RAINY, chart_url)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 rasrf 15コマ詳細検証", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
