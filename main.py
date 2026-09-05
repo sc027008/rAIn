@@ -477,10 +477,28 @@ def main():
 # =========================================================
 # 6. 安全な実データAPI取得テスト関数（デバッグ結果をChatへ送信）
 # =========================================================
+import math
+import os
+import requests
+from io import BytesIO
+from PIL import Image
+
+def tile_to_latlon_bounds(x, y, zoom):
+    """タイル座標(x, y)の北西端(NW)および南東端(SE)の緯度経度を逆算します。"""
+    n = 2.0 ** zoom
+    nw_lon = x / n * 360.0 - 180.0
+    nw_lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
+    nw_lat = math.degrees(nw_lat_rad)
+
+    se_lon = (x + 1) / n * 360.0 - 180.0
+    se_lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n)))
+    se_lat = math.degrees(se_lat_rad)
+
+    return nw_lat, nw_lon, se_lat, se_lon
+
 def test_real_api_fetch():
     """
-    [Step 2] 座標変換(latlon_to_tile)の数値妥当性と、
-    N1(現在)・N2(直近+5分)からの正確なRGBAピクセル値取得を検証します。
+    [Step 2] 幾何学的クロスチェック ＋ N1/N2 ピクセル取得の統合検証
     """
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -492,59 +510,66 @@ def test_real_api_fetch():
 
     lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 [Step 2] N1/N2 座標変換＆ピクセル抽出検証</b><br>"]
+    logs = ["<b>🔍 [Step 2] 座標精度クロスチェック ＋ N1/N2検証</b><br>"]
 
-    # 1. 座標変換計算のログ
+    # 1. タイル・ピクセル計算と境界座標の逆算
     xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-    logs.append(f"<b>【座標計算】</b> 緯度:{lat}, 経度:{lon}")
-    logs.append(f"・Tile(zoom=10): <code>x={xtile}, y={ytile}</code>")
-    logs.append(f"・Pixel: <code>px={px}, py={py}</code><br>")
+    nw_lat, nw_lon, se_lat, se_lon = tile_to_latlon_bounds(xtile, ytile, 10)
 
-    # 2. N1(現在実況: index[0]) ピクセル抽出
-    try:
-        res_n1 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
-        if res_n1.status_code == 200:
-            n1_item = res_n1.json()[0]  # 降順のためindex[0]が最新実況
-            b_time, v_time = n1_item["basetime"], n1_item["validtime"]
-            elem = n1_item.get("elements", ["hrpns"])[0]
-            url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-            
-            t_res = requests.get(url, headers=headers, timeout=5)
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                pixel = img.getpixel((px, py))
-                desc, val, _, _ = rgb_to_rainfall(pixel)
-                logs.append(f"<b>【N1 現在地実況】</b> (Valid: {v_time})")
-                logs.append(f"・HTTP: 200 | 抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
-            else:
-                logs.append(f"<b>【N1 現在地実況】</b>: HTTP {t_res.status_code}<br>")
-    except Exception as e:
-        logs.append(f"❌ N1検証エラー: {e}<br>")
+    # 地理的クロスチェック（ターゲット座標がタイルの範囲内に存在するか）
+    is_contained = (se_lat <= lat <= nw_lat) and (nw_lon <= lon <= se_lon)
 
-    # 3. N2(最直近予測: index[-1]) ピクセル抽出
-    try:
-        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
-        if res_n2.status_code == 200:
-            n2_data = res_n2.json()
-            n2_item = n2_data[-1]  # 降順のためindex[-1]が最直近(+5分)
-            b_time, v_time = n2_item["basetime"], n2_item["validtime"]
-            elem = n2_item.get("elements", ["hrpns"])[0]
-            url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-            
-            t_res = requests.get(url, headers=headers, timeout=5)
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                pixel = img.getpixel((px, py))
-                desc, val, _, _ = rgb_to_rainfall(pixel)
-                logs.append(f"<b>【N2 直近+5分予測】</b> (Valid: {v_time})")
-                logs.append(f"・HTTP: 200 | 抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b>")
-            else:
-                logs.append(f"<b>【N2 直近+5分予測】</b>: HTTP {t_res.status_code}")
-    except Exception as e:
-        logs.append(f"❌ N2検証エラー: {e}")
+    logs.append("<b>【1. 幾何学的クロスチェック】</b>")
+    logs.append(f"・指定座標: 緯度 {lat}, 経度 {lon}")
+    logs.append(f"・算出タイル(z=10): x={xtile}, y={ytile} | ピクセル: px={px}, py={py}")
+    logs.append(f"・タイル北西端(NW): 緯度 {nw_lat:.4f}, 経度 {nw_lon:.4f}")
+    logs.append(f"・タイル南東端(SE): 緯度 {se_lat:.4f}, 経度 {se_lon:.4f}")
+    logs.append(f"・<b>範囲内包含判定: {'✅ VALID (正常)' if is_contained else '❌ INVALID (計算不整合)'}</b><br>")
+
+    if not is_contained:
+        logs.append("⚠️ 座標計算に不整合があるため、ピクセル取得を中断します。")
+    else:
+        # 2. N1(現在値: index[0]) ピクセル抽出
+        try:
+            res_n1 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
+            if res_n1.status_code == 200:
+                n1_item = res_n1.json()[0]
+                b_time, v_time = n1_item["basetime"], n1_item["validtime"]
+                elem = n1_item.get("elements", ["hrpns"])[0]
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                
+                t_res = requests.get(url, headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel = img.getpixel((px, py))
+                    desc, val, _, _ = rgb_to_rainfall(pixel)
+                    logs.append(f"<b>【2. N1 現在地実況】</b> (Valid: {v_time})")
+                    logs.append(f"・抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
+        except Exception as e:
+            logs.append(f"❌ N1取得エラー: {e}<br>")
+
+        # 3. N2(直近+5分: index[-1]) ピクセル抽出
+        try:
+            res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
+            if res_n2.status_code == 200:
+                n2_data = res_n2.json()
+                n2_item = n2_data[-1]
+                b_time, v_time = n2_item["basetime"], n2_item["validtime"]
+                elem = n2_item.get("elements", ["hrpns"])[0]
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                
+                t_res = requests.get(url, headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel = img.getpixel((px, py))
+                    desc, val, _, _ = rgb_to_rainfall(pixel)
+                    logs.append(f"<b>【3. N2 直近+5分予測】</b> (Valid: {v_time})")
+                    logs.append(f"・抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b>")
+        except Exception as e:
+            logs.append(f"❌ N2取得エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 Step 2 検証結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 Step 2 精度検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
