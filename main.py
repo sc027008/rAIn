@@ -184,19 +184,19 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 16, "family": "sans-serif", "weight": "bold"}
+                        "font": {"size": 16, "weight": "bold"} # 個別fontFamilyを削除
                     }
                 }
             ]
         },
         "options": {
+            # ★ グローバルフォント指定（全体へ確実に適用）
             "defaultFontFamily": "sans-serif",
             "title": {
                 "display": True,
                 "text": title_text,
                 "fontSize": 16,
                 "fontColor": "#111111",
-                "fontFamily": "sans-serif",
                 "fontStyle": "bold",
                 "padding": 10
             },
@@ -220,14 +220,12 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "labelString": "時間後",
                         "fontSize": 20,
                         "fontColor": "#111111",
-                        "fontFamily": "sans-serif",
                         "fontStyle": "bold"
                     },
                     "ticks": {
                         "fontSize": 15,
                         "maxRotation": 0,
-                        "fontColor": "#111111",
-                        "fontFamily": "sans-serif"
+                        "fontColor": "#111111"
                     }
                 }],
                 "yAxes": [
@@ -240,8 +238,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "max": y1_max,
                             "stepSize": step_y1,
                             "fontSize": 15,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
+                            "fontColor": "#111111"
                         }
                     },
                     {
@@ -253,8 +250,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "max": y2_max,
                             "stepSize": step_y2,
                             "fontSize": 15,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
+                            "fontColor": "#111111"
                         },
                         "gridLines": {"drawOnChartArea": True}
                     }
@@ -263,7 +259,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         }
     }
 
-    # Short URL API (POST https://quickchart.io/chart/create) による短縮URL生成
     try:
         payload = {
             "chart": chart_config,
@@ -276,7 +271,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         if res.status_code == 200:
             data = res.json()
             if data.get("success") and "url" in data:
-                # 短縮URLにも確実にフォント指定を追加
                 return data["url"] + "?f=sans-serif"
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
