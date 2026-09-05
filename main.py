@@ -157,7 +157,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "borderColor": "#2e7d32",
                     "borderWidth": 4,
                     "pointRadius": 0,
-                    "fill": False,
+                    "fill": True,  # 領域の塗りつぶしを有効化
+                    "backgroundColor": "rgba(46, 125, 50, 0.08)",  # 淡い緑色の背景を追加
                     "yAxisID": "y2",
                     "order": 0,
                     "datalabels": {"display": False}
@@ -182,7 +183,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "yAxisID": "y1",
                     "order": 2,
                     "datalabels": {
-                        "display": datalabel_display, # JS関数を使わず配列指定で0を確実非表示
+                        "display": datalabel_display,
                         "anchor": "end",
                         "align": "end",
                         "offset": -2,
@@ -244,6 +245,10 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "fontSize": 19,
                             "fontColor": "#111111",
                             "fontFamily": "sans-serif"
+                        },
+                        "gridLines": {
+                            "color": "#e0e0e0",
+                            "borderDash": [3, 3]  # 横方向の補助線をドット（点線）に変更
                         }
                     },
                     {
@@ -258,7 +263,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "fontColor": "#111111",
                             "fontFamily": "sans-serif"
                         },
-                        "gridLines": {"drawOnChartArea": True}
+                        "gridLines": {
+                            "drawOnChartArea": True,
+                            "color": "#e0e0e0",
+                            "borderDash": [3, 3]  # 横方向の補助線をドット（点線）に変更
+                        }
                     }
                 ]
             }
