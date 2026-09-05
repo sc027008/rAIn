@@ -124,7 +124,6 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
     
-    # 0.5mm未満（雨なし）のデータはラベル表示を False にして確実に消去
     datalabel_display = [val >= 0.5 for val in all_rain]
     
     cumulative_rain = []
@@ -145,6 +144,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 
     title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 5 + "折れ線グラフ: 積算雨量 [mm]↓"
 
+    # Chart.js v4 構文へ更新
     chart_config = {
         "type": "bar",
         "data": {
@@ -157,8 +157,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "borderColor": "#2e7d32",
                     "borderWidth": 4,
                     "pointRadius": 0,
-                    "fill": True,  # 領域の塗りつぶしを有効化
-                    "backgroundColor": "rgba(46, 125, 50, 0.08)",  # 淡い緑色の背景を追加
+                    "fill": True,
+                    "backgroundColor": "rgba(46, 125, 50, 0.08)",
                     "yAxisID": "y2",
                     "order": 0,
                     "datalabels": {"display": False}
@@ -180,6 +180,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "label": "時間雨量(mm/h)",
                     "data": all_rain,
                     "backgroundColor": bar_colors,
+                    "borderRadius": 6,  # v4 で動作する角丸設定
                     "yAxisID": "y1",
                     "order": 2,
                     "datalabels": {
@@ -188,22 +189,23 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 20, "family": "sans-serif", "weight": "bold"}
+                        "font": {"size": 20, "family": "LINE Seed JP", "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
-            "title": {
-                "display": True,
-                "text": title_text,
-                "fontSize": 19,
-                "fontColor": "#111111",
-                "fontFamily": "sans-serif",
-                "fontStyle": "bold",
-                "padding": 12
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": title_text,
+                    "color": "#111111",
+                    "font": {"size": 19, "family": "LINE Seed JP", "weight": "bold"},
+                    "padding": 12
+                },
+                "legend": {"display": False},
+                "datalabels": {"display": True}
             },
-            "legend": {"display": False},
             "layout": {
                 "padding": {
                     "top": 5,
@@ -212,70 +214,60 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "bottom": 5
                 }
             },
-            "plugins": {
-                "datalabels": {"display": True}
-            },
             "scales": {
-                "xAxes": [{
-                    "gridLines": {"display": False},
-                    "scaleLabel": {
+                "x": {
+                    "grid": {"display": False},
+                    "title": {
                         "display": True,
-                        "labelString": "時間後",
-                        "fontSize": 19,
-                        "fontColor": "#111111",
-                        "fontFamily": "sans-serif",
-                        "fontStyle": "bold"
+                        "text": "時間後",
+                        "color": "#111111",
+                        "font": {"size": 19, "family": "LINE Seed JP", "weight": "bold"}
                     },
                     "ticks": {
-                        "fontSize": 18,
-                        "maxRotation": 0,
-                        "fontColor": "#111111",
-                        "fontFamily": "sans-serif"
+                        "color": "#111111",
+                        "font": {"size": 18, "family": "LINE Seed JP"},
+                        "maxRotation": 0
                     }
-                }],
-                "yAxes": [
-                    {
-                        "id": "y1",
-                        "type": "linear",
-                        "position": "left",
-                        "ticks": {
-                            "min": 0,
-                            "max": y1_max,
-                            "stepSize": step_y1,
-                            "fontSize": 19,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
-                        },
-                        "gridLines": {
-                            "color": "#e0e0e0",
-                            "borderDash": [3, 3]  # 横方向の補助線をドット（点線）に変更
-                        }
+                },
+                "y1": {
+                    "type": "linear",
+                    "position": "left",
+                    "min": 0,
+                    "max": y1_max,
+                    "ticks": {
+                        "stepSize": step_y1,
+                        "color": "#111111",
+                        "font": {"size": 19, "family": "LINE Seed JP"}
                     },
-                    {
-                        "id": "y2",
-                        "type": "linear",
-                        "position": "right",
-                        "ticks": {
-                            "min": 0,
-                            "max": y2_max,
-                            "stepSize": step_y2,
-                            "fontSize": 19,
-                            "fontColor": "#111111",
-                            "fontFamily": "sans-serif"
-                        },
-                        "gridLines": {
-                            "drawOnChartArea": True,
-                            "color": "#e0e0e0",
-                            "borderDash": [3, 3]  # 横方向の補助線をドット（点線）に変更
-                        }
+                    "grid": {
+                        "color": "#e0e0e0",
+                        "borderDash": [3, 3]
                     }
-                ]
+                },
+                "y2": {
+                    "type": "linear",
+                    "position": "right",
+                    "min": 0,
+                    "max": y2_max,
+                    "ticks": {
+                        "stepSize": step_y2,
+                        "color": "#111111",
+                        "font": {"size": 19, "family": "LINE Seed JP"}
+                    },
+                    "grid": {
+                        "drawOnChartArea": True,
+                        "color": "#e0e0e0",
+                        "borderDash": [3, 3]
+                    }
+                }
             }
         }
     }
 
     try:
+        # payload に "version": "4" を明示指定して v4 レンダーエンジンを起動
         payload = {
+            "version": "4",
             "chart": chart_config,
             "width": 600,
             "height": 300,
@@ -286,13 +278,13 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         if res.status_code == 200:
             data = res.json()
             if data.get("success") and "url" in data:
-                return data["url"] + "?f=sans-serif"
+                return data["url"] + "&f=LINE+Seed+JP"
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
 
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
-    return f"https://quickchart.io/chart?c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=sans-serif"
+    return f"https://quickchart.io/chart?v=4&c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=LINE+Seed+JP"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
