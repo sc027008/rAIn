@@ -162,7 +162,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
                     "header": {
                         "title": title_text,
                         "imageUrl": icon_url,
-                        "imageType": "CIRCLE"
+                        "imageType": "SQUARE" # 四角形指定によりトリミングを解除
                     },
                     "sections": [
                         {
@@ -273,7 +273,7 @@ def main():
         
         formatted_text = (
             f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            f"<font color=\"#757575\">今後3時間積算 {cum_3h_str} mm ｜ 15時間積算 {cum_15h_str} mm</font>"
+            f"<font color=\"#757575\">•今後3時間積算 {cum_3h_str} mm<br>•今後15時間積算 {cum_15h_str} mm</font>"
         )
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY)
@@ -295,7 +295,7 @@ def main():
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
-            formatted_text = f"<b><font color=\"#f5a623\">17～翌8時の積算雨量 {cum_15h_str} mm</font></b>"
+            formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_str} mm</b>"
             send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
@@ -316,10 +316,10 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    # テスト1: アメデス（指定形式）
+    # テスト1: アメデス（箇条書き・改行形式）
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
-        f"<font color=\"#757575\">今後3時間積算 35 mm ｜ 15時間積算 68 mm</font>"
+        f"<font color=\"#757575\">•今後3時間積算 35 mm<br>•今後15時間積算 68 mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY)
 
@@ -327,8 +327,8 @@ def test_all_notifications():
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
     send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", text_weak, ICON_RAINBOW)
 
-    # テスト3: 今夜アメデス（指定形式）
-    text_evening = f"<b><font color=\"#f5a623\">17～翌8時の積算雨量 32 mm</font></b>"
+    # テスト3: 今夜アメデス（色なし・数値のみ太字）
+    text_evening = f"17～翌8時の積算雨量 <b>32 mm</b>"
     send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN)
 
     print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
@@ -339,7 +339,7 @@ def test_all_notifications():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     # 【本番運用モード】（普段はこちらを有効化）
-    #main()
+    # main()
 
     # 【テスト送信モード】（テスト時は上の main() の頭に # を付け、下の行の # を消してください）
     test_all_notifications()
