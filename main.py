@@ -480,7 +480,7 @@ def main():
 def test_real_api_fetch():
     """
     N1.json, N2.json, N3.json の各ファイルに格納されている
-    件数、basetime、カバー時間帯（先頭〜末尾validtime）、定義要素名を完全出力します。
+    件数、basetime、カバー時間帯（先頭〜末尾validtime）、定義要素名を安全に出力します。
     """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
 
@@ -489,7 +489,7 @@ def test_real_api_fetch():
         return
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 N1 / N2 / N3 全データ範囲一覧検証</b><br>"]
+    logs = ["<b>🔍 N1 / N2 / N3 全データ範囲一覧検証 (修正版)</b><br>"]
 
     endpoints = ["N1.json", "N2.json", "N3.json"]
 
@@ -505,7 +505,6 @@ def test_real_api_fetch():
                     first_v = data[0].get("validtime", "不明")
                     last_v = data[-1].get("validtime", "不明")
                     
-                    # 要素名の集約
                     elem_set = set()
                     for item in data:
                         for e in item.get("elements", []):
@@ -513,7 +512,7 @@ def test_real_api_fetch():
                     
                     logs.append(f"<b>【{ep}】</b> (件数: {count}件)")
                     logs.append(f"・Basetime: <code>{b_time}</code>")
-                    logs.append(f"・先頭Valid: <code>{first_first := first_v}</code>")
+                    logs.append(f"・先頭Valid: <code>{first_v}</code>")
                     logs.append(f"・末尾Valid: <code>{last_v}</code>")
                     logs.append(f"・定義要素: <code>{list(elem_set)}</code><br>")
                 else:
@@ -521,10 +520,9 @@ def test_real_api_fetch():
             else:
                 logs.append(f"<b>【{ep}】</b>: <font color=\"red\">HTTP {res.status_code}</font><br>")
         except Exception as e:
-            logs.append(f"<b>【{ep}】</b>: 通信エラー ({e})<br>")
+            logs.append(f"<b>【{ep}】</b>: 処理エラー ({e})<br>")
 
     debug_text = "<br>".join(logs)
-    # 位置情報を含めない安全なダミー座標値でカード送信
     send_google_chat_card(webhook_url, 0.0, 0.0, "🔍 エンドポイント全比較ログ", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
