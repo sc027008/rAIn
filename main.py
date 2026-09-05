@@ -479,51 +479,47 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    N1.json, N2.json, N3.json の各ファイルに格納されている
-    件数、basetime、カバー時間帯（先頭〜末尾validtime）、定義要素名を安全に出力します。
+    rasrf エンドポイントから実データを取得し、デバッグ結果を Google Chat へ送信します。
     """
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
 
-    if not webhook_url:
-        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
+    if not webhook_url or not lat_str or not lon_str:
+        print("Execution finished (Missing env vars).")
         return
 
+    lat = float(lat_str)
+    lon = float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 N1 / N2 / N3 全データ範囲一覧検証 (修正版)</b><br>"]
+    logs = ["<b>🔍 rasrf（15時間予報）検証結果</b><br>"]
 
-    endpoints = ["N1.json", "N2.json", "N3.json"]
+    # 1. リアルタイムデータ(N1)
+    try:
+        elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
+        target = elem_res.json()[2]
+        basetime, validtime = target["basetime"], target["validtime"]
+        xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+        tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
+        
+        res = requests.get(tile_url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            img = Image.open(BytesIO(res.content)).convert("RGBA")
+            pixel = img.getpixel((px, py))
+            rain_desc, rain_val, _, _ = rgb_to_rainfall(pixel)
+            logs.append(f"<b>【N1 現在値】</b> {rain_desc} ({rain_val} mm/h)")
+        else:
+            rain_val = 0.0
+    except Exception as e:
+        rain_val = 0.0
+        logs.append(f"❌ N1通信失敗: {e}")
 
-    for ep in endpoints:
-        url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_{ep}"
-        try:
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                count = len(data)
-                if count > 0:
-                    b_time = data[0].get("basetime", "不明")
-                    first_v = data[0].get("validtime", "不明")
-                    last_v = data[-1].get("validtime", "不明")
-                    
-                    elem_set = set()
-                    for item in data:
-                        for e in item.get("elements", []):
-                            elem_set.add(e)
-                    
-                    logs.append(f"<b>【{ep}】</b> (件数: {count}件)")
-                    logs.append(f"・Basetime: <code>{b_time}</code>")
-                    logs.append(f"・先頭Valid: <code>{first_v}</code>")
-                    logs.append(f"・末尾Valid: <code>{last_v}</code>")
-                    logs.append(f"・定義要素: <code>{list(elem_set)}</code><br>")
-                else:
-                    logs.append(f"<b>【{ep}】</b>: データ0件<br>")
-            else:
-                logs.append(f"<b>【{ep}】</b>: <font color=\"red\">HTTP {res.status_code}</font><br>")
-        except Exception as e:
-            logs.append(f"<b>【{ep}】</b>: 処理エラー ({e})<br>")
+    # 2. rasrf 15時間予測データ
+    cum_3h, cum_15h, hourly_rain, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val)
+    logs.append(f"<b>【rasrf 15時間予測】</b><br>15時間積算: <b>{cum_15h} mm</b><br>配列(15h): {hourly_rain}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔍 エンドポイント全比較ログ", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🧪 rasrf 修正検証結果", debug_text, ICON_RAINY, chart_url)
     print("Execution completed successfully.")
 
 # =========================================================
