@@ -197,8 +197,34 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         "data": {
             "labels": labels,
             "datasets": [
+                # ----------------------------------------------------
+                # レイヤー0 (最前面): ラベル専用（透明な線グラフ）
+                # ----------------------------------------------------
                 {
-                    # 積算雨量ライン（傘絵文字風の深みのある紫色＋下部透過塗り）
+                    "type": "line",
+                    "label": "時間雨量ラベル用ダミー",
+                    "data": all_rain,
+                    "borderColor": "transparent",
+                    "backgroundColor": "transparent",
+                    "pointRadius": 0,
+                    "yAxisID": "y1",
+                    "order": 0,
+                    "datalabels": {
+                        "display": datalabel_display,
+                        "anchor": "end",
+                        "align": "end",
+                        "offset": -2,
+                        "color": "#111111",
+                        "font": {"size": 20, "family": "LINE Seed JP", "weight": "bold"},
+                        # 重なっても読めるよう白フチを追加
+                        "textStrokeColor": "#ffffff",
+                        "textStrokeWidth": 4
+                    }
+                },
+                # ----------------------------------------------------
+                # レイヤー1: 積算雨量 (折れ線・メイン)
+                # ----------------------------------------------------
+                {
                     "type": "line",
                     "label": "積算雨量(mm)",
                     "data": cumulative_rain,
@@ -208,39 +234,36 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "fill": True,
                     "backgroundColor": "rgba(123, 31, 162, 0.08)",
                     "yAxisID": "y2",
-                    "order": 0,
+                    "order": 1,
                     "datalabels": {"display": False}
                 },
+                # ----------------------------------------------------
+                # レイヤー2: 積算雨量 (折れ線・透過白フチ用)
+                # ----------------------------------------------------
                 {
-                    # 積算雨量ライン（白縁取り用・視認性確保）
                     "type": "line",
                     "label": "積算雨量_白縁取り",
                     "data": cumulative_rain,
-                    "borderColor": "white",
+                    "borderColor": "rgba(255, 255, 255, 0.7)", # 透過白フチ
                     "borderWidth": 10,
                     "pointRadius": 0,
                     "fill": False,
                     "yAxisID": "y2",
-                    "order": 1,
+                    "order": 2,
                     "datalabels": {"display": False}
                 },
+                # ----------------------------------------------------
+                # レイヤー3 (最背面): 時間雨量 (棒グラフ本体)
+                # ----------------------------------------------------
                 {
-                    # 時間雨量（棒グラフ・上部角丸）
                     "type": "bar",
                     "label": "時間雨量(mm/h)",
                     "data": all_rain,
                     "backgroundColor": bar_colors,
-                    "borderRadius": 6,  # Chart.js v4 で機能する棒の角丸設定
+                    "borderRadius": 6,
                     "yAxisID": "y1",
-                    "order": 2,
-                    "datalabels": {
-                        "display": datalabel_display,
-                        "anchor": "end",
-                        "align": "end",
-                        "offset": -2,
-                        "color": "#111111",
-                        "font": {"size": 20, "family": "LINE Seed JP", "weight": "bold"}
-                    }
+                    "order": 3,
+                    "datalabels": {"display": False} # ラベルはダミーで描画するため非表示
                 }
             ]
         },
@@ -291,7 +314,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     },
                     "grid": {
                         "color": "#bdbdbd",
-                        "borderDash": [6, 6]  # 3x高解像度レンダリング時でも潰れないドット幅
+                        "borderDash": [6, 6]
                     }
                 },
                 "y2": {
@@ -307,7 +330,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "grid": {
                         "drawOnChartArea": True,
                         "color": "#bdbdbd",
-                        "borderDash": [6, 6]  # 3x高解像度レンダリング時でも潰れないドット幅
+                        "borderDash": [6, 6]
                     }
                 }
             }
@@ -580,8 +603,10 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    current_rain_val = 2.0
-    sample_rain = [15.0, 35.0, 50.0, 25.0, 10.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    # 重なりを検証するためのダミーデータ
+    # 棒グラフが中盤で高くなり、積算の折れ線グラフと交差・重なりやすいパターン
+    current_rain_val = 15.0
+    sample_rain = [20.0, 15.0, 10.0, 30.0, 25.0, 10.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     sample_chart_url = generate_chart_url(sample_rain, current_rain_val)
 
     # 1. アメデス（降雨通知）テスト
