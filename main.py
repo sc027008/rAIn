@@ -500,7 +500,12 @@ def main():
     try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
         target_times = elem_res.json()
-        target = target_times[2]
+        
+        # basetime == validtime の実況フレーム（現在値）を正確に抽出
+        target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), target_times[0] if target_times else None)
+        if not target:
+            sys.exit(1)
+            
         basetime = target["basetime"]
         validtime = target["validtime"]
     except Exception:
@@ -583,7 +588,6 @@ def find_active_rain_location():
         ("長崎", 32.7503, 129.8777), ("鹿児島", 31.5966, 130.5571), ("奄美", 28.3772, 129.4950),
         ("那覇", 26.2124, 127.6809), ("石垣島", 24.3448, 124.1572)
     ]
-    # 候補リストをシャッフルしてランダム性を確保
     random.shuffle(candidate_spots)
 
     try:
@@ -593,13 +597,12 @@ def find_active_rain_location():
             return None, None, None
 
         target_times = res.json()
-        if len(target_times) < 3:
+        target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), None)
+        if not target:
             return None, None, None
 
-        target = target_times[2]
         basetime, validtime = target["basetime"], target["validtime"]
 
-        # 1. シャッフルされた候補地の走査
         for name, lat, lon in candidate_spots:
             xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
@@ -612,7 +615,6 @@ def find_active_rain_location():
                 if rain_val > 0.0:
                     return f"{name}周辺", lat, lon
 
-        # 2. ピンポイントでヒットしない場合、タイルの画像全ピクセルから雨域セルを検出（こちらもシャッフル）
         scan_tiles = [(901, 404), (905, 402), (895, 410), (890, 415), (910, 395)]
         random.shuffle(scan_tiles)
 
@@ -667,8 +669,9 @@ def test_forced_notification():
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
         if elem_res.status_code == 200:
             target_times = elem_res.json()
-            if len(target_times) >= 3:
-                target = target_times[2]
+            # basetime == validtime の実況フレーム（現在値）を正確に抽出
+            target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), None)
+            if target:
                 basetime, validtime = target["basetime"], target["validtime"]
                 xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
                 url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
