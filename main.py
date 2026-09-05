@@ -479,92 +479,44 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    全国の雨雲タイルから「複数の異なる実在RGB値」を抽出し、
-    新設した絶対最近傍ロジックが正しく各雨量へマッピングできるかを実証します。
+    [Step 1] nowc (N1/N2) の時系列データ構造検証
+    配列の件数、basetime、および先頭・末尾のvalidtimeを直接出力して順序を確認します。
     """
-    import math
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     if not webhook_url:
         print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 新パレット判定ロジック 網羅性テスト</b><br>"]
+    logs = ["<b>🔍 [Step 1] nowc 時系列構造検証</b><br>"]
 
-    # 3パレット全24パターンの完全定義テーブル
-    JMA_TEST_PALETTE = [
-        ((242, 242, 255), 0.5, "わずかな降水", "#f2f2ff"), ((235, 245, 255), 0.5, "わずかな降水", "#ebf5ff"), ((200, 225, 255), 0.5, "わずかな降水", "#c8e1ff"),
-        ((160, 210, 255), 1.0, "弱雨", "#a0d2ff"), ((128, 192, 255), 1.0, "弱雨", "#80c0ff"), ((175, 210, 240), 1.0, "弱雨", "#afd2f0"),
-        ((33, 140, 255), 5.0, "雨", "#218cff"), ((65, 140, 255), 5.0, "雨", "#418cff"), ((110, 160, 240), 5.0, "雨", "#6ea0f0"),
-        ((0, 65, 255), 10.0, "やや強い雨", "#0041ff"), ((0, 0, 255), 10.0, "やや強い雨", "#0000ff"), ((90, 120, 240), 10.0, "やや強い雨", "#5a78f0"),
-        ((250, 245, 0), 20.0, "強い雨", "#faf500"), ((255, 255, 0), 20.0, "強い雨", "#ffff00"), ((245, 240, 110), 20.0, "強い雨", "#f5f06e"),
-        ((255, 153, 0), 30.0, "激しい雨", "#ff9900"), ((255, 165, 0), 30.0, "激しい雨", "#ffa500"), ((250, 185, 100), 30.0, "激しい雨", "#fab964"),
-        ((255, 40, 0), 50.0, "非常に激しい雨", "#ff2800"), ((255, 0, 0), 50.0, "非常に激しい雨", "#ff0000"), ((240, 130, 110), 50.0, "非常に激しい雨", "#f0826e"),
-        ((180, 0, 104), 80.0, "猛烈な雨", "#b40068"), ((210, 0, 170), 80.0, "猛烈な雨", "#d200aa"), ((200, 120, 160), 80.0, "猛烈な雨", "#c878a0"),
+    endpoints = [
+        ("N1 実況", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"),
+        ("N2 予測", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json")
     ]
 
-    def test_logic(pixel):
-        if not pixel or len(pixel) < 3: return "降水なし", 0.0
-        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
-        r, g, b = pixel[:3]
-        min_dist = float("inf")
-        best = ("降水なし", 0.0)
-        for (pr, pg, pb), val, desc, _ in JMA_TEST_PALETTE:
-            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-            if dist < min_dist:
-                min_dist = dist
-                best = (desc, val)
-        return best
-
-    test_coords = [
-        ("九州", 31.59, 130.55), ("四国", 33.84, 132.76), ("関西", 34.69, 135.50),
-        ("東海", 35.18, 136.90), ("関東", 35.68, 139.76), ("東北", 38.26, 140.87),
-        ("北海道", 43.06, 141.35), ("沖縄", 26.21, 127.68)
-    ]
-
-    unique_colors = set()
-    mapped_results = []
-
-    try:
-        res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
-        if res.status_code == 200:
-            item = res.json()[0]
-            b_time, v_time = item["basetime"], item["validtime"]
-            elem = item.get("elements", ["hrpns"])[0]
-
-            for region, lat, lon in test_coords:
-                xtile, ytile, _, _ = latlon_to_tile(lat, lon, 10)
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                t_res = requests.get(url, headers=headers, timeout=5)
-                
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    # 各タイルから最大5個の「異なる雨雲色」をサンプリング
-                    samples = 0
-                    for x in range(0, img.width, 5): # 高速化のため5px飛ばし
-                        for y in range(0, img.height, 5):
-                            p = img.getpixel((x, y))
-                            if len(p) >= 4 and p[3] > 0 and p[:3] != (255, 255, 255):
-                                rgb = p[:3]
-                                if rgb not in unique_colors:
-                                    unique_colors.add(rgb)
-                                    desc, val = test_logic(p)
-                                    mapped_results.append(f"・{region}: <code>{p}</code> -> <b>{desc} ({val}mm)</b>")
-                                    samples += 1
-                                    if samples >= 5: break
-                        if samples >= 5: break
-
-            if mapped_results:
-                logs.append(f"<b>【実データ {len(mapped_results)}色の判定結果】</b>")
-                logs.extend(mapped_results)
+    for name, url in endpoints:
+        try:
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data:
+                    logs.append(f"<b>【{name}】</b> (件数: {len(data)}件)")
+                    logs.append(f"・Basetime: <code>{data[0]['basetime']}</code>")
+                    # 先頭3件と末尾3件の時刻順序を確認
+                    v_head = [d['validtime'] for d in data[:3]]
+                    v_tail = [d['validtime'] for d in data[-3:]]
+                    logs.append(f"・Valid(先頭): <code>{v_head}</code>")
+                    logs.append(f"・Valid(末尾): <code>{v_tail}</code><br>")
+                else:
+                    logs.append(f"<b>【{name}】</b>: データ空<br>")
             else:
-                logs.append("※現在、全国テスト座標周辺で雨雲ピクセルが検出されませんでした。")
-
-    except Exception as e:
-        logs.append(f"❌ 検証エラー: {e}")
+                logs.append(f"<b>【{name}】</b>: HTTP {res.status_code}<br>")
+        except Exception as e:
+            logs.append(f"<b>【{name}】</b>: エラー {e}<br>")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 新判定ロジック検証", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 nowc時系列検証", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
