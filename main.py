@@ -139,21 +139,25 @@ def generate_chart_url(hourly_rain_list):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
+    # ★ キャンバス上端（y=0）から絶対座標で描画するため見切れ・消失を完全防止
     draw_y_titles_js = """function(chart) {
         var ctx = chart.ctx;
         ctx.save();
-        ctx.font = "bold 16px 'BIZ UDPGothic', sans-serif";
+        ctx.font = "bold 15px 'BIZ UDPGothic', sans-serif";
         ctx.fillStyle = "#111111";
         ctx.textAlign = "center";
+        ctx.textBaseline = "top"; // 座標指定を文字の上端に設定
         
-        var top = chart.chartArea.top - 58;
-        var left = chart.chartArea.left - 5;
-        var right = chart.chartArea.right + 5;
+        var top = 5; // 画像の一番上から5pxの位置から書き始める
+        var left = chart.chartArea.left; // 左軸とグラフの境界X座標
+        var right = chart.chartArea.right; // 右軸とグラフの境界X座標
         
+        // 左軸タイトル
         ctx.fillText("棒グラフ", left, top);
         ctx.fillText("時間雨量", left, top + 18);
         ctx.fillText("[mm/h]", left, top + 36);
         
+        // 右軸タイトル
         ctx.fillText("折れ線グラフ", right, top);
         ctx.fillText("積算雨量", right, top + 18);
         ctx.fillText("[mm]", right, top + 36);
@@ -181,12 +185,12 @@ def generate_chart_url(hourly_rain_list):
                     "datalabels": {"display": False}
                 },
                 {
-                    # ★ 縁取り用の折れ線（白）
+                    # ★ 白縁取り用の太い折れ線
                     "type": "line",
-                    "label": "積算雨量(mm)_白縁取り",
+                    "label": "積算雨量_白縁取り",
                     "data": cumulative_rain,
                     "borderColor": "white",
-                    "borderWidth": 7.5, # メインより太くする
+                    "borderWidth": 7.5,
                     "pointRadius": 0,
                     "pointHoverRadius": 0,
                     "fill": False,
@@ -195,7 +199,7 @@ def generate_chart_url(hourly_rain_list):
                     "datalabels": {"display": False}
                 },
                 {
-                    # ★ 棒グラフ
+                    # 棒グラフ
                     "type": "bar",
                     "label": "時間雨量(mm/h)",
                     "data": hourly_rain_list,
@@ -220,9 +224,9 @@ def generate_chart_url(hourly_rain_list):
             "legend": {"display": False},
             "layout": {
                 "padding": {
-                    "top": 65,
-                    "left": 10,
-                    "right": 10,
+                    "top": 60,   # ★3行の文字(51px)がギリギリ入る最小限の余白に圧縮
+                    "left": 15,
+                    "right": 15,
                     "bottom": 5
                 }
             },
@@ -237,13 +241,13 @@ def generate_chart_url(hourly_rain_list):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 18,
+                        "fontSize": 18,               # ★スマホ向けに拡大
                         "fontColor": "#111111",
                         "fontFamily": "BIZ UDPGothic",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 15,
+                        "fontSize": 15,               # ★スマホ向けに拡大
                         "maxRotation": 0,
                         "minRotation": 0,
                         "fontColor": "#111111",
@@ -259,7 +263,7 @@ def generate_chart_url(hourly_rain_list):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 14,
+                            "fontSize": 14,           # ★スマホ向けに拡大
                             "fontColor": "#111111",
                             "fontFamily": "Noto Sans"
                         }
@@ -272,7 +276,7 @@ def generate_chart_url(hourly_rain_list):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 14,
+                            "fontSize": 14,           # ★スマホ向けに拡大
                             "fontColor": "#111111",
                             "fontFamily": "Noto Sans"
                         },
@@ -355,7 +359,14 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "<b>雨雲レーダーを開く</b>｜気象庁", # ★ ボタン内の特定のテキストのみ太字化
+                    "text": "<b>雨雲レーダーを開く</b>｜気象庁",
+                    "color": {
+                        # ★ 薄いブルーグレーの背景色を指定し、枠線を消去
+                        "red": 0.94,
+                        "green": 0.96,
+                        "blue": 0.98,
+                        "alpha": 1.0
+                    },
                     "onClick": {
                         "openLink": {
                             "url": jma_url
@@ -470,8 +481,10 @@ def main():
         sent_amedes_in_this_run = True
 
     elif current_rank == 0 and last_notified_type == "RAINY":
+        # ★ 雨上がりの予感でもグラフを取得して添付する
+        _, _, _, chart_url = get_future_cumulative_rain_data(lat, lon, zoom)
         formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
-        send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW)
+        send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
         save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
 
     else:
@@ -511,7 +524,7 @@ def test_all_notifications():
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY, sample_chart_url)
 
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
-    send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW)
+    send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW, sample_chart_url) # ★ グラフ添付
 
     text_evening = f"17～翌8時の積算雨量 <b>143 mm</b>"
     send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
