@@ -498,8 +498,8 @@ def tile_to_latlon_bounds(x, y, zoom):
     
 def test_real_api_fetch():
     """
-    /immed/ パスを適用し、+1h〜+15h の全15時間の予報タイルが
-    HTTP 404 なしで完全取得できるか検証します。
+    タイムゾーンの型を統一し、/immed/ パスによる
+    +1h〜+15h の全15時間予報タイルの取得を検証します。
     """
     import math
     import os
@@ -530,6 +530,10 @@ def test_real_api_fetch():
         ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
     ]
 
+    def local_parse_time(time_str):
+        # タイムゾーンなしの naive datetime としてパース
+        return datetime.strptime(time_str, "%Y%m%d%H%M%S")
+
     def local_rgb_to_rainfall(pixel):
         if not pixel or len(pixel) < 3: return "降水なし", 0.0
         if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
@@ -552,8 +556,9 @@ def test_real_api_fetch():
         n2_times = res_n2.json() if res_n2.status_code == 200 else []
         rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
 
-        now = datetime.now(timezone(timedelta(hours=9)))
-        start_dt = now + timedelta(hours=1)
+        # JST現在の時刻（naive datetime）を取得
+        now_jst = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
+        start_dt = now_jst + timedelta(hours=1)
         target_hours = [start_dt + timedelta(hours=i) for i in range(15)]
 
         for idx, th in enumerate(target_hours, start=1):
@@ -564,7 +569,7 @@ def test_real_api_fetch():
 
             for t in source_list:
                 if target_layer == "nowc" or "rasrf" in t.get("elements", []):
-                    v_dt = parse_jma_time(t["validtime"])
+                    v_dt = local_parse_time(t["validtime"])
                     diff = abs((v_dt - th).total_seconds())
                     if diff < min_diff:
                         min_diff = diff
@@ -576,7 +581,7 @@ def test_real_api_fetch():
                     elem = best_match.get("elements", ["hrpns"])[0]
                     tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
                 else:
-                    # member パスを /immed/ に指定
+                    # Web GUIと同じ /immed/ パスを指定
                     tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/immed/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
 
                 t_res = requests.get(tile_url, headers=headers, timeout=5)
