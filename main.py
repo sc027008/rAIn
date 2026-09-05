@@ -312,9 +312,12 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "color": "#111111",
                         "font": {"size": 19, "family": "LINE Seed JP"}
                     },
+                    # Chart.js v4 構文でのドット（破線）指定
                     "grid": {
                         "color": "#bdbdbd",
-                        "borderDash": [6, 6]
+                    },
+                    "border": {
+                        "dash": [2, 3] # v4ではborder内にdash指定を行う
                     }
                 },
                 "y2": {
@@ -327,10 +330,13 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "color": "#111111",
                         "font": {"size": 19, "family": "LINE Seed JP"}
                     },
+                    # Chart.js v4 構文でのドット（破線）指定
                     "grid": {
                         "drawOnChartArea": True,
-                        "color": "#bdbdbd",
-                        "borderDash": [6, 6]
+                        "color": "#bdbdbd"
+                    },
+                    "border": {
+                         "dash": [2, 3] # v4ではborder内にdash指定を行う
                     }
                 }
             }
@@ -548,15 +554,16 @@ def main():
 
     # 2) 降雨発生・強まり通知（アメデス）
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        cum_3h, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-        cum_3h_str = str(cum_3h) if cum_3h < 1.0 else str(int(cum_3h))
-        cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
+        
+        # 本文中の積算雨量を整数表示（3時間積算行はグラフ追加に伴い削除）
+        cum_15h_int = int(cum_15h)
         
         formatted_text = (
             f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            f"<font color=\"#757575\">•今後3時間積算 {cum_3h_str} mm<br>•今後15時間積算 {cum_15h_str} mm</font>"
+            f"<font color=\"#757575\">今後15時間積算 {cum_15h_int} mm</font>"
         )
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
@@ -578,8 +585,9 @@ def main():
         _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
-            cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
-            formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_str} mm</b>"
+            # 本文中の積算雨量を整数表示
+            cum_15h_int = int(cum_15h)
+            formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
             send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
@@ -609,10 +617,13 @@ def test_all_notifications():
     sample_rain = [20.0, 15.0, 10.0, 30.0, 25.0, 10.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     sample_chart_url = generate_chart_url(sample_rain, current_rain_val)
 
+    # 本文中の積算雨量を整数表示（3時間積算は削除）
+    cum_15h_int = int(sum(sample_rain) + current_rain_val)
+
     # 1. アメデス（降雨通知）テスト
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
-        f"<font color=\"#757575\">•今後3時間積算 {sum(sample_rain[:3]) + current_rain_val} mm<br>•今後15時間積算 {sum(sample_rain) + current_rain_val} mm</font>"
+        f"<font color=\"#757575\">今後15時間積算 {cum_15h_int} mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY, sample_chart_url)
 
@@ -621,7 +632,7 @@ def test_all_notifications():
     send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW, sample_chart_url)
 
     # 3. 今夜アメデス（17時定時通知）テスト
-    text_evening = f"17～翌8時の積算雨量 <b>145 mm</b>"
+    text_evening = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
     send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
 
     print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
