@@ -88,7 +88,7 @@ def rgb_to_rainfall(rgb):
     if (r, g, b) == (180, 0, 104):  return "猛烈な雨", 80.0, "#ab47bc", 6
     if (r, g, b) == (255, 0, 0):    return "非常に激しい雨", 50.0, "#e53935", 5
     if (r, g, b) == (255, 106, 0):  return "激しい雨", 30.0, "#f57c00", 4
-    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#fbc02d", 3
+    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#f5a623", 3  # ライトモード対応調整色
     if (r, g, b) == (0, 70, 255):   return "やや強い雨", 10.0, "#1e88e5", 2
     if (r, g, b) == (0, 170, 255):  return "雨", 5.0, "#29b6f6", 1
     if (r, g, b) == (100, 200, 255): return "弱雨", 1.0, "#4dd0e1", 0
@@ -102,17 +102,15 @@ def rgb_to_rainfall(rgb):
 def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     
-    # 降水がある場合（rain_val > 0.0）のみ数値 (◯ mm/h) を併記し、太字は本文テキストのみに適用
-    # 「降水なし（rain_val == 0.0）」の場合は数値併記なし
+    # 太字はテキストのみとし、全角スペースを開けて数値を結合
     if rain_val > 0.0:
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-        display_msg = f"<b>{msg_text}</b> ({val_str} mm/h)"
+        display_msg = f"<b>{msg_text}</b> {val_str} mm/h"
     else:
         display_msg = f"<b>{msg_text}</b>"
     
     formatted_text = f"<font color=\"{color_code}\">{display_msg}</font>"
     
-    # 送信ごとにユニークなcardIdを生成して連投時の不達・上書きを回避
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
     card_payload = {
@@ -149,7 +147,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
                                 },
                                 {
                                     "textParagraph": {
-                                        "text": "<font color=\"#9e9e9e\"><sub>出典: 気象庁</sub></font>"
+                                        "text": "<font color=\"#757575\">気象庁</font>"
                                     }
                                 }
                             ]
@@ -180,12 +178,12 @@ def test_all_colors():
         ("アメデス", "猛烈な雨", 80.0, "#ab47bc", ICON_RAINY),
         ("アメデス", "非常に激しい雨", 50.0, "#e53935", ICON_RAINY),
         ("アメデス", "激しい雨", 30.0, "#f57c00", ICON_RAINY),
-        ("アメデス", "強い雨", 20.0, "#fbc02d", ICON_RAINY),
+        ("アメデス", "強い雨", 20.0, "#f5a623", ICON_RAINY),
         ("アメデス", "やや強い雨", 10.0, "#1e88e5", ICON_RAINY),
         ("アメデス", "雨", 5.0, "#29b6f6", ICON_RAINY),
-        ("雨が弱くなりました", "弱雨", 1.0, "#4dd0e1", ICON_CLOUD),
-        ("雨が弱くなりました", "わずかな降水", 0.5, "#90a4ae", ICON_CLOUD),
-        ("雨が弱くなりました", "降水なし", 0.0, "#78909c", ICON_CLOUD),
+        ("雨が弱くなります", "弱雨", 1.0, "#4dd0e1", ICON_CLOUD),
+        ("雨が弱くなります", "わずかな降水", 0.5, "#90a4ae", ICON_CLOUD),
+        ("雨が弱くなります", "降水なし", 0.0, "#78909c", ICON_CLOUD),
     ]
 
     print("🧪 全9パターンの表示テストメッセージを送信中...")
@@ -262,7 +260,7 @@ def main():
     elif last_rank >= 1 and current_rank == 0:
         send_google_chat_card(
             webhook_url, lat, lon,
-            title_text="雨が弱くなりました",
+            title_text="雨が弱くなります",
             msg_text=rain_desc,
             rain_val=rain_val,
             color_code=color_code,
@@ -276,4 +274,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    test_all_colors()
