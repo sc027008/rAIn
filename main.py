@@ -479,7 +479,7 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    GitHubのログへ機密情報を一切出さず、実データ取得結果・解析値・グラフをGoogle Chatへ直接カード送信します。
+    推測を排除し、15時間分の全通信レスポンス・ピクセル色・判定結果を完全ログ化してChatへ送信します。
     """
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -489,42 +489,58 @@ def test_real_api_fetch():
         print("Execution finished (Missing env vars).")
         return
 
-    lat = float(lat_str)
-    lon = float(lon_str)
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = []
+    logs = ["<b>🔍 API通信＆画像解析 詳細検証ログ</b><br>"]
 
-    # 1. N1 リアルタイムデータ取得テスト
     try:
-        elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
-        target = elem_res.json()[2]
-        basetime, validtime = target["basetime"], target["validtime"]
+        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
+        res = requests.get(url_target, headers=headers, timeout=10)
+        logs.append(f"<b>N2.json取得</b>: HTTP {res.status_code}")
         
+        target_times = res.json()
         xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-        tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
         
-        res = requests.get(tile_url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            img = Image.open(BytesIO(res.content)).convert("RGBA")
-            pixel_color = img.getpixel((px, py))
-            rain_desc, rain_val, color_code, rank = rgb_to_rainfall(pixel_color)
-            logs.append(f"<b>【N1 リアルタイム解析結果】</b><br>判定: {rain_desc} ({rain_val} mm/h)<br>ピクセル色: {pixel_color}")
-        else:
-            rain_val = 0.0
-            logs.append(f"❌ タイル取得エラー (HTTP {res.status_code})")
+        base_dt = parse_jma_time(target_times[0]["basetime"])
+        target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
+        
+        for idx, th in enumerate(target_hours, start=1):
+            best_match = None
+            min_diff = float("inf")
+            for t in target_times:
+                v_dt = parse_jma_time(t["validtime"])
+                diff = abs((v_dt - th).total_seconds())
+                if diff < min_diff:
+                    min_diff = diff
+                    best_match = t
+            
+            if not best_match:
+                logs.append(f"<b>+{idx}h</b>: 一致ターゲットなし")
+                continue
+
+            basetime = best_match["basetime"]
+            validtime = best_match["validtime"]
+            elements = best_match.get("elements", ["不明"])
+            
+            # 通信テスト（要素名をそのまま使用）
+            element_name = elements[0] if elements else "hrpns"
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{element_name}/10/{xtile}/{ytile}.png"
+            
+            t_res = requests.get(tile_url, headers=headers, timeout=5)
+            
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel = img.getpixel((px, py))
+                desc, val, _, _ = rgb_to_rainfall(pixel)
+                logs.append(f"<b>+{idx}h ({element_name})</b>: HTTP 200 | RGBA:{pixel} -> <b>{desc}({val}mm)</b>")
+            else:
+                logs.append(f"<b>+{idx}h ({element_name})</b>: <font color=\"red\">HTTP {t_res.status_code}</font>")
+
     except Exception as e:
-        rain_val = 0.0
-        logs.append(f"❌ N1通信失敗: {e}")
+        logs.append(f"❌ 検証例外エラー: {e}")
 
-    # 2. N2 15時間予測サンプリングテスト
-    cum_3h, cum_15h, hourly_rain, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val)
-    logs.append(f"<br><b>【N2 15時間予測解析結果】</b><br>15時間積算雨量: <b>{cum_15h} mm</b><br>毎時予測(15h): {hourly_rain}")
-
-    # 3. デバッグ用カード送信
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🧪 API実データデバッグ結果", debug_text, ICON_RAINY, chart_url)
-
-    # Publicログには安全なメッセージのみ出力
+    send_google_chat_card(webhook_url, lat, lon, "🧪 15時間詳細検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
