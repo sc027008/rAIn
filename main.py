@@ -498,70 +498,93 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    [Step 3] N1(実況) および N2(直近+5分予測) の hrpns タイルから
-    実際の雨雲ピクセル(A>0)を全国走査で直接抽出し、雨量マッピングを検証します。
+    [Step 4] rasrf (+7h〜+15h) の1時間刻みターゲットマッチングと
+    HTTPステータス・雨量マッピングの正確性を自動検証します。
     """
+    import math
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     if not webhook_url:
         print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 [Step 3] N1/N2 (hrpns) 雨雲ピクセル抽出検証</b><br>"]
+    logs = ["<b>🔍 [Step 4] rasrf (+7h〜+15h) 時間間隔マッチング検証</b><br>"]
 
-    test_coords = [
-        ("九州", 31.59, 130.55), ("四国", 33.84, 132.76), ("関西", 34.69, 135.50),
-        ("東海", 35.18, 136.90), ("関東", 35.68, 139.76), ("東北", 38.26, 140.87),
-        ("北海道", 43.06, 141.35), ("沖縄", 26.21, 127.68)
+    JMA_COMPLETE_PALETTE = [
+        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
+        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
+        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
+        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
+        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
+        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
+        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
+        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
     ]
 
-    targets = [
-        ("N1 (実況)", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", 0),
-        ("N2 (直近+5分)", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", -1)
-    ]
+    def local_rgb_to_rainfall(pixel):
+        if not pixel or len(pixel) < 3: return "降水なし", 0.0
+        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
+        r, g, b = pixel[:3]
+        min_dist = float("inf")
+        best = ("降水なし", 0.0)
+        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
+            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+            if dist < min_dist:
+                min_dist = dist
+                best = (desc, val)
+        return best
 
-    for layer_name, url_target, target_idx in targets:
-        try:
-            res = requests.get(url_target, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                if data:
-                    item = data[target_idx]
-                    b_time, v_time = item["basetime"], item["validtime"]
-                    elem = item.get("elements", ["hrpns"])[0]
+    try:
+        res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
+        if res.status_code == 200:
+            target_times = res.json()
+            if target_times:
+                base_dt = parse_jma_time(target_times[0]["basetime"])
+                # +7時間後 〜 +15時間後の目標時刻リストを作成 (毎時00分)
+                target_hours = [base_dt + timedelta(hours=i) for i in range(7, 16)]
 
-                    found_pixel = None
-                    found_region = ""
+                test_coords = [("九州", 31.59, 130.55), ("関東", 35.68, 139.76)]
 
-                    for region, lat, lon in test_coords:
-                        xtile, ytile, _, _ = latlon_to_tile(lat, lon, 10)
-                        url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                        t_res = requests.get(url, headers=headers, timeout=5)
+                for idx, th in enumerate(target_hours, start=7):
+                    best_match = None
+                    min_diff = float("inf")
+                    
+                    for t in target_times:
+                        if "rasrf" in t.get("elements", []):
+                            v_dt = parse_jma_time(t["validtime"])
+                            diff = abs((v_dt - th).total_seconds())
+                            if diff < min_diff:
+                                min_diff = diff
+                                best_match = t
+
+                    if best_match and min_diff < 1800:
+                        b_time, v_time = best_match["basetime"], best_match["validtime"]
                         
+                        # 1地域サンプリングしてHTTPステータスとRGBAを確認
+                        region, lat, lon = test_coords[0]
+                        xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+                        url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                        
+                        t_res = requests.get(url, headers=headers, timeout=5)
                         if t_res.status_code == 200:
                             img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                            for x in range(0, img.width, 4):
-                                for y in range(0, img.height, 4):
-                                    p = img.getpixel((x, y))
-                                    if len(p) >= 4 and p[3] > 0 and p[:3] != (255, 255, 255):
-                                        found_pixel = p
-                                        found_region = region
-                                        break
-                                if found_pixel: break
-                        if found_pixel: break
-
-                    if found_pixel:
-                        desc, val, _, _ = rgb_to_rainfall(found_pixel)
-                        logs.append(f"<b>【{layer_name}】</b> (Valid: {v_time})")
-                        logs.append(f"・検出地域: {found_region}")
-                        logs.append(f"・抽出RGBA: <code>{found_pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
+                            pixel = img.getpixel((px, py))
+                            desc, val = local_rgb_to_rainfall(pixel)
+                            logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{desc} ({val}mm)</b>")
+                        else:
+                            logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
                     else:
-                        logs.append(f"<b>【{layer_name}】</b>: 全国テスト地域で雨雲ピクセルなし<br>")
-        except Exception as e:
-            logs.append(f"❌ {layer_name} 抽出エラー: {e}<br>")
+                        logs.append(f"・<b>+{idx}h</b>: 該当ターゲットなし")
+            else:
+                logs.append("❌ rasrf targetTimes が空です。")
+        else:
+            logs.append(f"❌ rasrf targetTimes 取得失敗: HTTP {res.status_code}")
+
+    except Exception as e:
+        logs.append(f"❌ 検証実行エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 Step 3 検証結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 Step 4 検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
