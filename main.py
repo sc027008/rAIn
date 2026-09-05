@@ -532,79 +532,152 @@ def main():
 # =========================================================
 # 6. 原因切り分け用 強制データ取得＆Chat送信テスト関数
 # =========================================================
-def test_forced_notification():
+def find_active_rain_location():
     """
-    1コマごとに『HTTP 200 (実際の雨量0.0)』か『HTTP 404/5xx/例外 (通信エラー)』かを
-    直接明示してカード送信します。
+    日本全国の主要候補地および雨雲タイルを探索し、
+    現在雨が降っている（rain_val > 0.0）地点の (地名, lat, lon) を返します。
     """
-    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
-
-    if not webhook_url or not lat_str or not lon_str:
-        print("エラー: 必須環境変数が設定されていません。")
-        return
-
-    lat, lon = float(lat_str), float(lon_str)
-    zoom = 10
     headers = {"User-Agent": "Mozilla/5.0"}
-
-    # 1. 実況データの切り分け取得
-    current_http_status = "UNKNOWN"
-    current_status_text = ""
-    rain_val = 0.0
-    color_code = "#78909c"
+    
+    # 全国主要都市・観測ポイントの候補リスト
+    candidate_spots = [
+        ("札幌", 43.0618, 141.3545), ("函館", 41.7687, 140.7288), ("青森", 40.8244, 140.7400),
+        ("秋田", 39.7186, 140.1024), ("仙台", 38.2682, 140.8694), ("新潟", 37.9161, 139.0364),
+        ("金沢", 36.5613, 136.6562), ("東京", 35.6762, 139.6503), ("八丈島", 33.1112, 139.7902),
+        ("静岡", 34.9756, 138.3828), ("名古屋", 35.1815, 136.9066), ("大阪", 34.6937, 135.5023),
+        ("和歌山", 34.2260, 135.1675), ("鳥取", 35.5011, 134.2351), ("広島", 34.3853, 132.4553),
+        ("高知", 33.5597, 133.5311), ("松山", 33.8416, 132.7657), ("福岡", 33.5902, 130.4017),
+        ("長崎", 32.7503, 129.8777), ("鹿児島", 31.5966, 130.5571), ("奄美", 28.3772, 129.4950),
+        ("那覇", 26.2124, 127.6809), ("石垣島", 24.3448, 124.1572)
+    ]
 
     try:
+        url = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code != 200:
+            return None, None, None
+
+        target_times = res.json()
+        if len(target_times) < 3:
+            return None, None, None
+
+        target = target_times[2]
+        basetime, validtime = target["basetime"], target["validtime"]
+
+        # 1. ピンポイント候補地の走査
+        for name, lat, lon in candidate_spots:
+            xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
+            t_res = requests.get(tile_url, headers=headers, timeout=3)
+            
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel = img.getpixel((px, py))
+                _, rain_val, _, _ = rgb_to_rainfall(pixel)
+                if rain_val > 0.0:
+                    return f"{name}周辺", lat, lon
+
+        # 2. ピンポイントでヒットしない場合、タイルの画像全ピクセルから雨域セルを検出
+        # 主要エリアのタイル（関東・近畿・九州・東北・沖縄等）を走査
+        scan_tiles = [(901, 404), (905, 402), (895, 410), (890, 415), (910, 395)]
+        for xtile, ytile in scan_tiles:
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
+            t_res = requests.get(tile_url, headers=headers, timeout=3)
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                width, height = img.size
+                # 16ピクセル刻みで高速サンプリング
+                for py_idx in range(0, height, 16):
+                    for px_idx in range(0, width, 16):
+                        pixel = img.getpixel((px_idx, py_idx))
+                        _, rain_val, _, _ = rgb_to_rainfall(pixel)
+                        if rain_val > 0.0:
+                            # ピクセル座標から緯度経度を逆算
+                            n = 2.0 ** 10
+                            x = xtile + px_idx / 256.0
+                            y = ytile + py_idx / 256.0
+                            calc_lon = round((x / n) * 360.0 - 180.0, 4)
+                            calc_lat = round(math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * y / n)))), 4)
+                            return f"雨域検出地点({calc_lat}, {calc_lon})", calc_lat, calc_lon
+
+    except Exception as e:
+        print(f"降雨エリア探索エラー: {e}")
+
+    return None, None, None
+
+
+def test_forced_notification():
+    """
+    雨が降っている地域を自動特定してデータ取得を行い、
+    該当地域の気象庁Web GUIリンクを添えてGoogle Chatへ送信します。
+    """
+    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
+    if not webhook_url:
+        print("エラー: CHAT_WEBHOOK_URL が設定されていません。")
+        return
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    print("=== 全国雨域自動スキャン開始 ===")
+
+    location_name, lat, lon = find_active_rain_location()
+
+    if not lat or not lon:
+        print("現在、日本全国の主要監視エリアに降雨が検出されませんでした（全域晴れ/薄くもり）。")
+        # 環境変数のデフォルト位置でフォールバック実行
+        lat = float(os.environ.get("TARGET_LAT", "35.1815"))
+        lon = float(os.environ.get("TARGET_LON", "136.9066"))
+        location_name = "指定座標(降雨なし)"
+
+    print(f"検証対象地点決定: {location_name} (緯度:{lat}, 経度:{lon})")
+
+    # 1. 検出地点の実況データ（nowc）取得
+    rain_desc, rain_val, color_code = "降水なし", 0.0, "#78909c"
+    try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
-        current_http_status = elem_res.status_code
         if elem_res.status_code == 200:
             target_times = elem_res.json()
             if len(target_times) >= 3:
                 target = target_times[2]
                 basetime, validtime = target["basetime"], target["validtime"]
-                xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
                 res = requests.get(url, headers=headers, timeout=10)
-                current_http_status = res.status_code
                 if res.status_code == 200:
                     img = Image.open(BytesIO(res.content)).convert("RGBA")
                     pixel_color = img.getpixel((px, py))
                     rain_desc, rain_val, color_code, _ = rgb_to_rainfall(pixel_color)
-                    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-                    current_status_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font> (HTTP 200)"
-                else:
-                    current_status_text = f"<font color=\"#e53935\"><b>[画像取得失敗]</b> HTTP {res.status_code}</font>"
-        else:
-            current_status_text = f"<font color=\"#e53935\"><b>[メタデータ失敗]</b> HTTP {elem_res.status_code}</font>"
     except Exception as e:
-        current_status_text = f"<font color=\"#e53935\"><b>[通信例外]</b> {type(e).__name__}</font>"
+        print(f"実況取得例外: {e}")
 
-    # 2. 予測データ 1コマごとの切り分け結果を取得
-    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+    # 2. 検出地点の15時間予測データ（rasrf）取得
+    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, 10)
 
-    # 3. 原因切り分けメッセージの組み立て
-    success_200_count = sum(1 for d in details if d["status_code"] == 200)
-    error_count = len(details) - success_200_count
+    # 3. 気象庁Web GUI検証用URLの生成
+    jma_gui_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
 
-    if error_count == 0:
-        summary_header = f"<b>データ取得結果</b>: <font color=\"#2e7d32\">🟢 全15コマ HTTP 200 正常取得 (実際の観測/予測値)</font>"
-    else:
-        summary_header = f"<b>データ取得結果</b>: <font color=\"#e53935\">⚠️ 15コマ中 {error_count}コマ でエラー発生</font>"
+    # 4. チャットメッセージ構築
+    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+    logs = [
+        f"<b>【実降雨エリアデバッグ検証】</b>",
+        f"<b>検証対象地域</b>: 📍 <b>{location_name}</b>",
+        f"<b>現在地の状況</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>",
+        f"<b>気象庁Web GUI確認リンク</b>: <a href=\"{jma_gui_url}\">雨雲の動き(公式GUI)で画面照合</a><br>",
+        f"<b>【15時間予測値およびHTTPレスポンス詳細】</b>"
+    ]
 
-    # 内訳ログの生成
-    logs = [summary_header, f"<b>現在地の状況</b>: {current_status_text}<br>", "<b>【15時間予測 ステータス詳細】</b>"]
-    
     for d in details:
         idx = d["idx"]
         vt = d["validtime"]
         code = d["status_code"]
-        desc = d["status_desc"]
+        rv = d["rain_val"]
         
         if code == 200:
-            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | <b>{d['rain_val']} mm/h</b>")
+            if rv is not None and rv > 0.0:
+                logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | <b><font color=\"#ff0000\">{rv} mm/h</font></b>")
+            else:
+                logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | {rv} mm/h")
         else:
-            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#e53935\"><b>{desc}</b></font>")
+            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#e53935\"><b>HTTP {code}</b></font>")
 
     logs.append(f"<br><b>15時間積算雨量</b>: {int(cum_15h)} mm")
     formatted_text = "<br>".join(logs)
@@ -613,21 +686,15 @@ def test_forced_notification():
         webhook_url=webhook_url,
         lat=lat,
         lon=lon,
-        title_text="🔬 原因切り分け検証配信",
+        title_text=f"🌧️ 実降雨検証 ({location_name})",
         formatted_text=formatted_text,
         icon_url=ICON_RAINY,
         chart_url=chart_url
     )
 
-    print("実行完了: 全コマのHTTPステータスを明示したカードを送信しました。")
+    print(f"送信完了: {location_name} (lat:{lat}, lon:{lon}) の実降雨データをGoogle Chatへ送信しました。")
 
-# =========================================================
-# 7. スクリプト実行エントリーポイント
-# =========================================================
+
 if __name__ == "__main__":
-    
-    # 【本番運用モード】
-    # main()
-    
-    # 【テスト検証モード】（1コマごとのHTTPステータスを原因切り分け表示）
+    # 雨域探索＆GUI照合リンク付きテストを実行
     test_forced_notification()
