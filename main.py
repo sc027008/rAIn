@@ -495,54 +495,79 @@ def tile_to_latlon_bounds(x, y, zoom):
     se_lat = math.degrees(se_lat_rad)
 
     return nw_lat, nw_lon, se_lat, se_lon
-
 def test_real_api_fetch():
     """
-    気象庁JMAタイルシステムで提供されている全データ種別（要素名）を
-    APIメタデータから直接取得し、現実に存在する要素を一覧表示します。
+    nowc および rasrf の targetTimes.json に存在する全エントリに対し
+    実際に画像タイルをリクエストし、HTTPステータスと取得可否の生の事実のみを出力します。
     """
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    if not webhook_url:
-        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
+
+    if not webhook_url or not lat_str or not lon_str:
+        print("Execution finished (Missing env vars).")
         return
 
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 気象庁JMAタイル 全提供要素・エンドポイント調査</b><br>"]
+    logs = ["<b>🔍 気象庁タイルAPI 実データ疎通検証（生の事実）</b><br>"]
 
-    # 気象庁のタイル定義メタデータおよび代表的JSONの確認
-    meta_urls = [
-        ("nowc targetTimes", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"),
-        ("rasrf targetTimes", "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"),
-    ]
+    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
 
-    found_elements = set()
-
-    for name, url in meta_urls:
+    # 1. nowc (N1 / N2) 全件検証
+    for layer_name, url_meta in [("nowc_N1", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"),
+                                 ("nowc_N2", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json")]:
         try:
-            res = requests.get(url, headers=headers, timeout=5)
+            res = requests.get(url_meta, headers=headers, timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                logs.append(f"<b>【{name}】</b> (取得成功)")
-                if isinstance(data, list) and len(data) > 0:
-                    # 定義されている全 elements を抽出
-                    for item in data[:10]: # 直近10件を走査
-                        elems = item.get("elements", [])
-                        for e in elems:
-                            found_elements.add(f"{name.split()[0]}/{e}")
+                logs.append(f"<b>【{layer_name}】</b> (全{len(data)}件)")
+                success_count = 0
+                for item in data:
+                    b_time, v_time = item["basetime"], item["validtime"]
+                    elem = item.get("elements", ["hrpns"])[0]
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                    t_res = requests.get(tile_url, headers=headers, timeout=5)
+                    if t_res.status_code == 200:
+                        success_count += 1
+                logs.append(f"・HTTP 200 取得成功: <b>{success_count} / {len(data)} 件</b><br>")
             else:
-                logs.append(f"<b>【{name}】</b>: HTTP {res.status_code}")
+                logs.append(f"<b>【{layer_name}】</b> メタデータ取得失敗: HTTP {res.status_code}<br>")
         except Exception as e:
-            logs.append(f"❌ {name} 取得エラー: {e}")
+            logs.append(f"❌ {layer_name} 検証エラー: {e}<br>")
 
-    if found_elements:
-        logs.append("<br><b>【現在確認された要素識別子一覧】</b>")
-        for elem in sorted(found_elements):
-            logs.append(f"・<code>{elem}</code>")
-    else:
-        logs.append("<br>❌ 有効な要素識別子が抽出できませんでした。")
+    # 2. rasrf 全件検証
+    try:
+        res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
+        if res_rasrf.status_code == 200:
+            rasrf_data = res_rasrf.json()
+            logs.append(f"<b>【rasrf】</b> (全{len(rasrf_data)}件)")
+            
+            rasrf_results = []
+            for item in rasrf_data:
+                if "rasrf" in item.get("elements", []):
+                    b_time, v_time = item["basetime"], item["validtime"]
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                    t_res = requests.get(tile_url, headers=headers, timeout=5)
+                    rasrf_results.append((b_time, v_time, t_res.status_code))
+
+            # ステータス別出力
+            success_list = [f"Base:{b} | Valid:{v}" for b, v, code in rasrf_results if code == 200]
+            failed_list = [f"Base:{b} | Valid:{v} (HTTP {code})" for b, v, code in rasrf_results if code != 200]
+
+            logs.append(f"・HTTP 200 成功コマ件数: <b>{len(success_list)} 件</b>")
+            if success_list:
+                logs.append("  [成功コマ例]: " + ", ".join(success_list[:3]))
+            logs.append(f"・HTTP 404 エラー件数: <b>{len(failed_list)} 件</b>")
+            if failed_list:
+                logs.append("  [失敗コマ例]: " + ", ".join(failed_list[:3]))
+        else:
+            logs.append(f"<b>【rasrf】</b> メタデータ取得失敗: HTTP {res_rasrf.status_code}")
+    except Exception as e:
+        logs.append(f"❌ rasrf 検証エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 全エンドポイント調査", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 実データ疎通確認結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
