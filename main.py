@@ -40,11 +40,13 @@ def is_operating_time():
 # ---------------------------------------------------------
 # 2. 状態（state.json）の読み込み・保存・初期化
 # ---------------------------------------------------------
-def save_state(rain_val, rank):
+def save_state(rain_val, current_rank, last_notified_rank, last_notified_type):
     jst = timezone(timedelta(hours=9))
     data = {
         "last_rain_val": rain_val,
-        "last_rank": rank,
+        "last_rank": current_rank,
+        "last_notified_rank": last_notified_rank,
+        "last_notified_type": last_notified_type,  # "RAINY", "WEAK", "NONE"
         "last_updated": datetime.now(jst).isoformat()
     }
     with open(STATE_FILE, "w") as f:
@@ -52,7 +54,7 @@ def save_state(rain_val, rank):
 
 def init_state_file():
     if not os.path.exists(STATE_FILE):
-        save_state(0.0, 0)
+        save_state(0.0, 0, 0, "NONE")
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -63,12 +65,20 @@ def load_state():
                 if last_time_str:
                     last_time = datetime.fromisoformat(last_time_str)
                     jst = timezone(timedelta(hours=9))
+                    # 1時間以上経過している場合は状態リセット
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
-                        return 0.0, 0
-                return float(data.get("last_rain_val", 0.0)), int(data.get("last_rank", 0))
+                        return 0.0, 0, 0, "NONE", True
+                
+                return (
+                    float(data.get("last_rain_val", 0.0)),
+                    int(data.get("last_rank", 0)),
+                    int(data.get("last_notified_rank", 0)),
+                    data.get("last_notified_type", "NONE"),
+                    False
+                )
         except Exception:
-            return 0.0, 0
-    return 0.0, 0
+            return 0.0, 0, 0, "NONE", True
+    return 0.0, 0, 0, "NONE", True
 
 
 # ---------------------------------------------------------
@@ -204,10 +214,10 @@ def main():
     if not is_operating_time():
         print("ℹ️ 稼働時間外のため処理をスキップします。")
         if load_state()[0] > 0:
-            save_state(0.0, 0)
+            save_state(0.0, 0, 0, "NONE")
         sys.exit(0)
 
-    last_rain_val, last_rank = load_state()
+    last_rain_val, last_rank, last_notified_rank, last_notified_type, is_fresh_start = load_state()
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
@@ -234,10 +244,18 @@ def main():
     except Exception:
         sys.exit(1)
 
-    print(f"📊 前回ランク: {last_rank} (数値:{last_rain_val}) -> 今回ランク: {current_rank} (数値:{rain_val}, {rain_desc})")
+    print(f"📊 現在: {rain_desc}(ランク{current_rank}) | 前回通知: {last_notified_type}(ランク{last_notified_rank}) | 朝一:{is_fresh_start}")
 
-    # 通知条件判定
-    if current_rank >= 1 and current_rank > last_rank:
+    # --- スマート通知判定ロジック ---
+    
+    # 朝一（稼働開始直後）にすでに雨が降っている場合は通知スキップして初期同期
+    if is_fresh_start and current_rank >= 1:
+        print("ℹ️ 稼働開始時点で既に雨が降っているため、朝一の通知をスキップします。")
+        save_state(rain_val, current_rank, current_rank, "RAINY")
+
+    # ① 「アメデス」通知を送る条件:
+    # 5.0mm/h以上の本降りで、かつ（直前通知が「弱くなります/なし」だった、または「過去に通知した雨の最大ランク」を上回った時）
+    elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
         send_google_chat_card(
             webhook_url, lat, lon,
             title_text="アメデス",
@@ -246,9 +264,11 @@ def main():
             color_code=color_code,
             icon_url=ICON_RAINY
         )
-        save_state(rain_val, current_rank)
+        save_state(rain_val, current_rank, current_rank, "RAINY")
         
-    elif last_rank >= 1 and current_rank == 0:
+    # ② 「雨が弱くなります」通知を送る条件:
+    # 直前の通知が「アメデス」であり、かつ雨量が完全に5.0mm/h未満（ランク0）まで落ちた時だけ1回送信
+    elif current_rank == 0 and last_notified_type == "RAINY":
         send_google_chat_card(
             webhook_url, lat, lon,
             title_text="雨が弱くなります",
@@ -257,12 +277,12 @@ def main():
             color_code=color_code,
             icon_url=ICON_RAINBOW
         )
-        save_state(0.0, 0)
+        save_state(0.0, 0, 0, "WEAK")
         
+    # ③ それ以外（本降りの範囲内での軽微な強弱変化など）は通知を出さずにサイレント更新
     else:
-        save_state(rain_val, current_rank)
+        save_state(rain_val, current_rank, last_notified_rank, last_notified_type)
 
 
 if __name__ == "__main__":
     main()
-    # test_all_colors()
