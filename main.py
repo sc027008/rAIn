@@ -176,7 +176,7 @@ def main():
     print(f"📊 解析結果 [10分後予報] -> 状態: {rain_desc} ({rain_val} mm/h)")
 
     # ④ 5.0mm/h以上の雨が予想された場合のみCardsV2で通知
-    if rain_val >= 5.0:
+    if rain_val >= 0.0:
         send_google_chat_card(rain_desc, rain_val)
     else:
         print("ℹ️ 10分後の予測雨量は5.0mm/h未満のため、通知をスキップしました。")
