@@ -479,44 +479,72 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    [Step 1] nowc (N1/N2) の時系列データ構造検証
-    配列の件数、basetime、および先頭・末尾のvalidtimeを直接出力して順序を確認します。
+    [Step 2] 座標変換(latlon_to_tile)の数値妥当性と、
+    N1(現在)・N2(直近+5分)からの正確なRGBAピクセル値取得を検証します。
     """
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    if not webhook_url:
-        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
+
+    if not webhook_url or not lat_str or not lon_str:
+        print("Execution finished (Missing env vars).")
         return
 
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 [Step 1] nowc 時系列構造検証</b><br>"]
+    logs = ["<b>🔍 [Step 2] N1/N2 座標変換＆ピクセル抽出検証</b><br>"]
 
-    endpoints = [
-        ("N1 実況", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"),
-        ("N2 予測", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json")
-    ]
+    # 1. 座標変換計算のログ
+    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+    logs.append(f"<b>【座標計算】</b> 緯度:{lat}, 経度:{lon}")
+    logs.append(f"・Tile(zoom=10): <code>x={xtile}, y={ytile}</code>")
+    logs.append(f"・Pixel: <code>px={px}, py={py}</code><br>")
 
-    for name, url in endpoints:
-        try:
-            res = requests.get(url, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                if data:
-                    logs.append(f"<b>【{name}】</b> (件数: {len(data)}件)")
-                    logs.append(f"・Basetime: <code>{data[0]['basetime']}</code>")
-                    # 先頭3件と末尾3件の時刻順序を確認
-                    v_head = [d['validtime'] for d in data[:3]]
-                    v_tail = [d['validtime'] for d in data[-3:]]
-                    logs.append(f"・Valid(先頭): <code>{v_head}</code>")
-                    logs.append(f"・Valid(末尾): <code>{v_tail}</code><br>")
-                else:
-                    logs.append(f"<b>【{name}】</b>: データ空<br>")
+    # 2. N1(現在実況: index[0]) ピクセル抽出
+    try:
+        res_n1 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
+        if res_n1.status_code == 200:
+            n1_item = res_n1.json()[0]  # 降順のためindex[0]が最新実況
+            b_time, v_time = n1_item["basetime"], n1_item["validtime"]
+            elem = n1_item.get("elements", ["hrpns"])[0]
+            url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+            
+            t_res = requests.get(url, headers=headers, timeout=5)
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel = img.getpixel((px, py))
+                desc, val, _, _ = rgb_to_rainfall(pixel)
+                logs.append(f"<b>【N1 現在地実況】</b> (Valid: {v_time})")
+                logs.append(f"・HTTP: 200 | 抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b><br>")
             else:
-                logs.append(f"<b>【{name}】</b>: HTTP {res.status_code}<br>")
-        except Exception as e:
-            logs.append(f"<b>【{name}】</b>: エラー {e}<br>")
+                logs.append(f"<b>【N1 現在地実況】</b>: HTTP {t_res.status_code}<br>")
+    except Exception as e:
+        logs.append(f"❌ N1検証エラー: {e}<br>")
+
+    # 3. N2(最直近予測: index[-1]) ピクセル抽出
+    try:
+        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
+        if res_n2.status_code == 200:
+            n2_data = res_n2.json()
+            n2_item = n2_data[-1]  # 降順のためindex[-1]が最直近(+5分)
+            b_time, v_time = n2_item["basetime"], n2_item["validtime"]
+            elem = n2_item.get("elements", ["hrpns"])[0]
+            url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+            
+            t_res = requests.get(url, headers=headers, timeout=5)
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel = img.getpixel((px, py))
+                desc, val, _, _ = rgb_to_rainfall(pixel)
+                logs.append(f"<b>【N2 直近+5分予測】</b> (Valid: {v_time})")
+                logs.append(f"・HTTP: 200 | 抽出RGBA: <code>{pixel}</code> -> <b>{desc} ({val} mm/h)</b>")
+            else:
+                logs.append(f"<b>【N2 直近+5分予測】</b>: HTTP {t_res.status_code}")
+    except Exception as e:
+        logs.append(f"❌ N2検証エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 nowc時系列検証", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 Step 2 検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
