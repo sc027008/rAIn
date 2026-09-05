@@ -4,6 +4,7 @@ import math
 import json
 import uuid
 import requests
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
@@ -13,33 +14,21 @@ STATE_FILE = "state.json"
 # 夜間積算雨量（17時〜翌8時）の通知しきい値（mm）
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
-# Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット不要・ダークモード対応)
-ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"      # ☔ 傘（雨）
-ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"    # 🌈 虹
-ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png" # 🌃 夜の街/夜空（雨の夜イメージ）
-
+# Google Noto Emoji
+ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
+ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
+ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
 # ---------------------------------------------------------
-# 1. 稼働時間・休日の判定 (8:00〜19:00 / 日曜・正月三が日のみ除外)
+# 1. 稼働時間・休日の判定
 # ---------------------------------------------------------
 def is_operating_time():
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
-    
-    # 8:00〜19:00 以外の時間帯は除外
-    if not (8 <= now.hour < 19):
-        return False
-        
-    # 日曜日 (weekday: 0=月, 1=火, ... 6=日)
-    if now.weekday() == 6:
-        return False
-        
-    # 1月1日〜1月3日 (正月三が日)
-    if now.month == 1 and 1 <= now.day <= 3:
-        return False
-        
+    if not (8 <= now.hour < 19): return False
+    if now.weekday() == 6: return False
+    if now.month == 1 and 1 <= now.day <= 3: return False
     return True
-
 
 # ---------------------------------------------------------
 # 2. 状態（state.json）の読み込み・保存・初期化
@@ -87,9 +76,8 @@ def load_state():
             return 0.0, 0, 0, "NONE", "", True
     return 0.0, 0, 0, "NONE", "", True
 
-
 # ---------------------------------------------------------
-# 3. 座標計算・画像解析・予測積算雨量算出
+# 3. 座標計算・画像解析・予測積算雨量算出＆グラフURL生成
 # ---------------------------------------------------------
 def latlon_to_tile(lat, lon, zoom=10):
     lat_rad = math.radians(lat)
@@ -112,14 +100,88 @@ def rgb_to_rainfall(rgb):
     if (r, g, b) == (200, 230, 255): return "わずかな降水", 0.5, "#90a4ae", 0
     return "降水なし", 0.0, "#78909c", 0
 
-def get_future_cumulative_rain(lat, lon, zoom=10):
-    """気象庁降水短時間予報から今後3時間および15時間の積算雨量(mm)を算出"""
+def get_color_for_value(val):
+    """数値(mm/h)から気象庁カラーのHEXコードを返す（棒グラフ用）"""
+    if val >= 80.0: return "#ab47bc" # 猛烈な雨
+    if val >= 50.0: return "#e53935" # 非常に激しい雨
+    if val >= 30.0: return "#f57c00" # 激しい雨
+    if val >= 20.0: return "#f5a623" # 強い雨
+    if val >= 10.0: return "#1e88e5" # やや強い雨
+    if val >= 5.0:  return "#29b6f6" # 雨
+    if val >= 1.0:  return "#4dd0e1" # 弱雨
+    if val > 0.0:   return "#90a4ae" # わずかな降水
+    return "#e0e0e0"                 # 降水なし（薄いグレー）
+
+def generate_chart_url(hourly_rain_list):
+    """15時間分の雨量配列からQuickChart API用のURLを生成"""
+    labels = [f"{i+1}h" for i in range(len(hourly_rain_list))]
+    
+    # 棒グラフ用のカラー配列を生成
+    bar_colors = [get_color_for_value(val) for val in hourly_rain_list]
+    
+    # 積算雨量の計算
+    cumulative_rain = []
+    total = 0.0
+    for r in hourly_rain_list:
+        total += r
+        cumulative_rain.append(round(total, 1))
+
+    chart_config = {
+        "type": "bar",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "type": "line",
+                    "label": "積算雨量(mm)",
+                    "data": cumulative_rain,
+                    "borderColor": "#424242", # 折れ線は落ち着いたダークグレーに変更（カラフルな棒と喧嘩しないように）
+                    "borderWidth": 2,
+                    "fill": False,
+                    "yAxisID": "y2"
+                },
+                {
+                    "type": "bar",
+                    "label": "時間雨量(mm/h)",
+                    "data": hourly_rain_list,
+                    "backgroundColor": bar_colors, # ★ここで配列を指定して色を塗り分け
+                    "yAxisID": "y1"
+                }
+            ]
+        },
+        "options": {
+            "title": {"display": True, "text": "今後15時間の雨量予測推移"},
+            "scales": {
+                "yAxes": [
+                    {
+                        "id": "y1",
+                        "type": "linear",
+                        "position": "left",
+                        "ticks": {"beginAtZero": True},
+                        "scaleLabel": {"display": True, "labelString": "mm/h"}
+                    },
+                    {
+                        "id": "y2",
+                        "type": "linear",
+                        "position": "right",
+                        "ticks": {"beginAtZero": True},
+                        "scaleLabel": {"display": True, "labelString": "積算mm"},
+                        "gridLines": {"drawOnChartArea": False}
+                    }
+                ]
+            }
+        }
+    }
+    encoded = urllib.parse.quote(json.dumps(chart_config))
+    return f"https://quickchart.io/chart?c={encoded}&w=500&h=220&bkg=white"
+
+def get_future_cumulative_rain_data(lat, lon, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
         res = requests.get(url_target, headers=headers, timeout=10)
         if res.status_code != 200:
-            return 0.0, 0.0
+            return 0.0, 0.0, [], ""
         
         target_times = res.json()
         xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
@@ -139,20 +201,52 @@ def get_future_cumulative_rain(lat, lon, zoom=10):
             else:
                 hourly_rain_list.append(0.0)
         
-        cum_3h = sum(hourly_rain_list[:3])
-        cum_15h = sum(hourly_rain_list[:15])
-        return round(cum_3h, 1), round(cum_15h, 1)
+        cum_3h = round(sum(hourly_rain_list[:3]), 1)
+        cum_15h = round(sum(hourly_rain_list[:15]), 1)
+        chart_url = generate_chart_url(hourly_rain_list)
+        
+        return cum_3h, cum_15h, hourly_rain_list, chart_url
     except Exception as e:
         print(f"⚠️ 予測積算データ取得エラー: {e}")
-        return 0.0, 0.0
-
+        return 0.0, 0.0, [], ""
 
 # ---------------------------------------------------------
 # 4. Google Chat カード送信処理（CardsV2）
 # ---------------------------------------------------------
-def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url):
+def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
+    
+    widgets = [
+        {
+            "textParagraph": {
+                "text": formatted_text
+            }
+        }
+    ]
+    
+    if chart_url:
+        widgets.append({
+            "image": {
+                "imageUrl": chart_url,
+                "altText": "雨量予測グラフ"
+            }
+        })
+        
+    widgets.append({
+        "buttonList": {
+            "buttons": [
+                {
+                    "text": "雨雲レーダーを開く｜気象庁",
+                    "onClick": {
+                        "openLink": {
+                            "url": jma_url
+                        }
+                    }
+                }
+            ]
+        }
+    })
     
     card_payload = {
         "cardsV2": [
@@ -162,31 +256,11 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
                     "header": {
                         "title": title_text,
                         "imageUrl": icon_url,
-                        "imageType": "SQUARE" # 四角形指定によりトリミングを解除
+                        "imageType": "SQUARE"
                     },
                     "sections": [
                         {
-                            "widgets": [
-                                {
-                                    "textParagraph": {
-                                        "text": formatted_text
-                                    }
-                                },
-                                {
-                                    "buttonList": {
-                                        "buttons": [
-                                            {
-                                                "text": "雨雲レーダーを開く｜気象庁",
-                                                "onClick": {
-                                                    "openLink": {
-                                                        "url": jma_url
-                                                    }
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
-                            ]
+                            "widgets": widgets
                         }
                     ]
                 }
@@ -199,7 +273,6 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         print(f"📡 送信ステータス: {res.status_code} ({title_text})")
     except Exception as e:
         print(f"❌ 送信エラー: {e}")
-
 
 # ---------------------------------------------------------
 # 5. メイン処理（本番用）
@@ -226,11 +299,10 @@ def main():
     last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start = load_state()
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # 10分後ナウキャストデータ取得
     try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
         target_times = elem_res.json()
-        target = target_times[2] # 10分後予測
+        target = target_times[2]
         basetime = target["basetime"]
         validtime = target["validtime"]
     except Exception:
@@ -259,13 +331,12 @@ def main():
 
     sent_amedes_in_this_run = False
 
-    # --- 1. 通常通知判定ロジック ---
     if is_fresh_start and current_rank >= 1:
         print("ℹ️ 稼働開始時点で既に雨が降っているため、朝一の通知をスキップします。")
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
 
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        cum_3h, cum_15h = get_future_cumulative_rain(lat, lon, zoom)
+        cum_3h, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, zoom)
         
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         cum_3h_str = str(cum_3h) if cum_3h < 1.0 else str(int(cum_3h))
@@ -276,7 +347,7 @@ def main():
             f"<font color=\"#757575\">•今後3時間積算 {cum_3h_str} mm<br>•今後15時間積算 {cum_15h_str} mm</font>"
         )
         
-        send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY)
+        send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
         sent_amedes_in_this_run = True
 
@@ -288,23 +359,19 @@ def main():
     else:
         save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date)
 
-
-    # --- 2. 終業時（17時前後）の「今夜アメデス」アラート判定 ---
     if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
-        _, cum_15h = get_future_cumulative_rain(lat, lon, zoom)
+        _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, zoom)
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_str} mm</b>"
-            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN)
+            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
-
 
 # ---------------------------------------------------------
 # 6. 全通知テスト実行用関数
 # ---------------------------------------------------------
 def test_all_notifications():
-    """本システムの全3パターンの通知カードを表示・動作確認するテスト関数"""
     init_state_file()
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat = float(os.environ.get("TARGET_LAT", "35.681236"))
@@ -316,30 +383,30 @@ def test_all_notifications():
 
     print("🧪 全3パターンの通知表示テストメッセージを送信中...")
 
-    # テスト1: アメデス（傘アイコン ☔）
+    # サンプル用データ（雨量が青→オレンジ→赤→青と変化する推移を再現）
+    sample_rain = [2.0, 15.0, 35.0, 50.0, 25.0, 10.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    sample_chart_url = generate_chart_url(sample_rain)
+
+    # テスト1: アメデス
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
-        f"<font color=\"#757575\">•今後3時間積算 35 mm<br>•今後15時間積算 68 mm</font>"
+        f"<font color=\"#757575\">•今後3時間積算 52 mm<br>•今後15時間積算 143 mm</font>"
     )
-    send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY, sample_chart_url)
 
     # テスト2: 雨上がりの予感
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
     send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW)
 
     # テスト3: 今夜アメデス
-    text_evening = f"17～翌8時の積算雨量 <b>32 mm</b>"
-    send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN)
+    text_evening = f"17～翌8時の積算雨量 <b>143 mm</b>"
+    send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
 
     print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
 
-
-# ---------------------------------------------------------
-# 7. スクリプト実行エントリーポイント
-# ---------------------------------------------------------
 if __name__ == "__main__":
     # 【本番運用モード】（普段はこちらを有効化）
-    main()
+    # main()
 
     # 【テスト送信モード】（テスト時は上の main() の頭に # を付け、下の行の # を消してください）
-    # test_all_notifications()
+    test_all_notifications()
