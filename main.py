@@ -498,93 +498,58 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    [Step 4] rasrf (+7h〜+15h) の1時間刻みターゲットマッチングと
-    HTTPステータス・雨量マッピングの正確性を自動検証します。
+    +7h の targetTimes エントリにおける basetime / validtime / elements
+    および実際のレスポンスURLをピンポイントで診断します。
     """
-    import math
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     if not webhook_url:
         print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 [Step 4] rasrf (+7h〜+15h) 時間間隔マッチング検証</b><br>"]
-
-    JMA_COMPLETE_PALETTE = [
-        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
-        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
-        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
-        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
-        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
-        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
-        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
-        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
-    ]
-
-    def local_rgb_to_rainfall(pixel):
-        if not pixel or len(pixel) < 3: return "降水なし", 0.0
-        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
-        r, g, b = pixel[:3]
-        min_dist = float("inf")
-        best = ("降水なし", 0.0)
-        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
-            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-            if dist < min_dist:
-                min_dist = dist
-                best = (desc, val)
-        return best
+    logs = ["<b>🔍 +7h HTTP 404 ピンポイント原因特定</b><br>"]
 
     try:
         res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
         if res.status_code == 200:
             target_times = res.json()
-            if target_times:
-                base_dt = parse_jma_time(target_times[0]["basetime"])
-                # +7時間後 〜 +15時間後の目標時刻リストを作成 (毎時00分)
-                target_hours = [base_dt + timedelta(hours=i) for i in range(7, 16)]
+            base_dt = parse_jma_time(target_times[0]["basetime"])
+            target_7h = base_dt + timedelta(hours=7)
 
-                test_coords = [("九州", 31.59, 130.55), ("関東", 35.68, 139.76)]
+            # +7h に最も近いエントリを抽出
+            best_match = None
+            min_diff = float("inf")
+            for t in target_times:
+                if "rasrf" in t.get("elements", []):
+                    v_dt = parse_jma_time(t["validtime"])
+                    diff = abs((v_dt - target_7h).total_seconds())
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_match = t
 
-                for idx, th in enumerate(target_hours, start=7):
-                    best_match = None
-                    min_diff = float("inf")
-                    
-                    for t in target_times:
-                        if "rasrf" in t.get("elements", []):
-                            v_dt = parse_jma_time(t["validtime"])
-                            diff = abs((v_dt - th).total_seconds())
-                            if diff < min_diff:
-                                min_diff = diff
-                                best_match = t
+            if best_match:
+                b_time = best_match["basetime"]
+                v_time = best_match["validtime"]
+                elements = best_match.get("elements", [])
+                
+                xtile, ytile, _, _ = latlon_to_tile(35.68, 139.76, 10)
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                t_res = requests.get(url, headers=headers, timeout=5)
 
-                    if best_match and min_diff < 1800:
-                        b_time, v_time = best_match["basetime"], best_match["validtime"]
-                        
-                        # 1地域サンプリングしてHTTPステータスとRGBAを確認
-                        region, lat, lon = test_coords[0]
-                        xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-                        url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                        
-                        t_res = requests.get(url, headers=headers, timeout=5)
-                        if t_res.status_code == 200:
-                            img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                            pixel = img.getpixel((px, py))
-                            desc, val = local_rgb_to_rainfall(pixel)
-                            logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{desc} ({val}mm)</b>")
-                        else:
-                            logs.append(f"・<b>+{idx}h</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
-                    else:
-                        logs.append(f"・<b>+{idx}h</b>: 該当ターゲットなし")
+                logs.append(f"・目標時刻 (+7h): <code>{target_7h.strftime('%Y%m%d%H%M%00')}</code>")
+                logs.append(f"・選定Basetime: <code>{b_time}</code>")
+                logs.append(f"・選定Validtime: <code>{v_time}</code>")
+                logs.append(f"・定義Elements: <code>{elements}</code>")
+                logs.append(f"・検証URL: <code>{url}</code>")
+                logs.append(f"・HTTPステータス: <b>{t_res.status_code}</b>")
             else:
-                logs.append("❌ rasrf targetTimes が空です。")
-        else:
-            logs.append(f"❌ rasrf targetTimes 取得失敗: HTTP {res.status_code}")
+                logs.append("❌ +7h にマッチするエントリが存在しませんでした。")
 
     except Exception as e:
-        logs.append(f"❌ 検証実行エラー: {e}")
+        logs.append(f"❌ 診断エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 Step 4 検証結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 +7h 404診断結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
