@@ -22,6 +22,25 @@ ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/
 ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
 ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
+# 気象庁雨雲タイルの全3種24パターンカラーパレット統合定義
+JMA_24_PALETTE = [
+    # パレット1 (標準)
+    ((180, 0, 104), 80.0, "猛烈な雨"), ((255, 40, 0), 50.0, "非常に激しい雨"),
+    ((255, 153, 0), 30.0, "激しい雨"), ((255, 245, 0), 20.0, "強い雨"),
+    ((0, 65, 255), 10.0, "やや強い雨"), ((33, 140, 255), 5.0, "雨"),
+    ((160, 210, 255), 1.0, "弱雨"), ((242, 242, 255), 0.5, "わずかな降水"),
+    # パレット2 (中間)
+    ((199, 64, 142), 80.0, "猛烈な雨"), ((255, 94, 64), 50.0, "非常に激しい雨"),
+    ((255, 179, 64), 30.0, "激しい雨"), ((255, 248, 64), 20.0, "強い雨"),
+    ((64, 113, 255), 10.0, "やや強い雨"), ((89, 169, 255), 5.0, "雨"),
+    ((184, 222, 255), 1.0, "弱雨"), ((246, 246, 255), 0.5, "わずかな降水"),
+    # パレット3 (パステル)
+    ((217, 127, 179), 80.0, "猛烈な雨"), ((255, 147, 127), 50.0, "非常に激しい雨"),
+    ((255, 204, 127), 30.0, "激しい雨"), ((255, 250, 127), 20.0, "強い雨"),
+    ((127, 160, 255), 10.0, "やや強い雨"), ((144, 197, 255), 5.0, "雨"),
+    ((207, 232, 255), 1.0, "弱雨"), ((248, 248, 255), 0.5, "わずかな降水"),
+]
+
 # =========================================================
 # 1. 稼働時間・休日の判定ロジック
 # =========================================================
@@ -102,20 +121,36 @@ def latlon_to_tile(lat, lon, zoom=10):
 def rgb_to_rainfall(pixel):
     """
     気象庁雨雲タイルのピクセル色から雨量(mm/h)と降雨ランクを判定します。
-    アルファ値（透明ピクセル）を最優先で非降水判定します。
+    透明ピクセルおよび白背景を除外し、全24パターンのパレットから最も近い色を探索します。
     """
-    if len(pixel) >= 4 and pixel[3] == 0:
+    if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0):
         return "降水なし", 0.0, "#78909c", 0
 
     r, g, b = pixel[:3]
-    if (r, g, b) == (180, 0, 104):  return "猛烈な雨", 80.0, "#ab47bc", 6
-    if (r, g, b) == (255, 0, 0):    return "非常に激しい雨", 50.0, "#e53935", 5
-    if (r, g, b) == (255, 106, 0):  return "激しい雨", 30.0, "#f57c00", 4
-    if (r, g, b) == (255, 216, 0):  return "強い雨", 20.0, "#f5a623", 3
-    if (r, g, b) == (0, 70, 255):   return "やや強い雨", 10.0, "#1e88e5", 2
-    if (r, g, b) == (0, 170, 255):  return "雨", 5.0, "#29b6f6", 1
-    if (r, g, b) == (100, 200, 255): return "弱雨", 1.0, "#4dd0e1", 0
-    if (r, g, b) == (200, 230, 255): return "わずかな降水", 0.5, "#90a4ae", 0
+    if (r, g, b) == (255, 255, 255):
+        return "降水なし", 0.0, "#78909c", 0
+
+    min_dist = float("inf")
+    best_desc, best_val = "降水なし", 0.0
+
+    for (pr, pg, pb), val, desc in JMA_24_PALETTE:
+        dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+        if dist < min_dist:
+            min_dist = dist
+            best_desc, best_val = desc, val
+
+    if min_dist > 45.0:
+        return "降水なし", 0.0, "#78909c", 0
+
+    if best_val >= 80.0: return best_desc, best_val, "#ab47bc", 6
+    if best_val >= 50.0: return best_desc, best_val, "#e53935", 5
+    if best_val >= 30.0: return best_desc, best_val, "#f57c00", 4
+    if best_val >= 20.0: return best_desc, best_val, "#f5a623", 3
+    if best_val >= 10.0: return best_desc, best_val, "#1e88e5", 2
+    if best_val >= 5.0:  return best_desc, best_val, "#29b6f6", 1
+    if best_val >= 1.0:  return best_desc, best_val, "#4dd0e1", 0
+    if best_val >= 0.5:  return best_desc, best_val, "#90a4ae", 0
+
     return "降水なし", 0.0, "#78909c", 0
 
 def get_color_for_value(val):
@@ -290,14 +325,13 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     正常取得(200)とエラー（通信障害・不整合）の原因を明確に分離します。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
-    details = []  # 1コマごとのレスポンス詳細ログを保持
+    details = []
 
     try:
         url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
         res = requests.get(url_target, headers=headers, timeout=10)
         
         if res.status_code != 200:
-            # targetTimes.json 自体の取得失敗
             for idx in range(1, 16):
                 details.append({
                     "idx": idx,
@@ -370,7 +404,6 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
                     "status_desc": f"通信例外 ({type(req_err).__name__})"
                 })
 
-        # 15コマ未満の不足埋め
         while len(hourly_rain_list) < 15:
             idx = len(hourly_rain_list) + 1
             hourly_rain_list.append(0.0)
@@ -539,7 +572,6 @@ def find_active_rain_location():
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     
-    # 全国主要都市・観測ポイントの候補リスト
     candidate_spots = [
         ("札幌", 43.0618, 141.3545), ("函館", 41.7687, 140.7288), ("青森", 40.8244, 140.7400),
         ("秋田", 39.7186, 140.1024), ("仙台", 38.2682, 140.8694), ("新潟", 37.9161, 139.0364),
@@ -564,7 +596,6 @@ def find_active_rain_location():
         target = target_times[2]
         basetime, validtime = target["basetime"], target["validtime"]
 
-        # 1. ピンポイント候補地の走査
         for name, lat, lon in candidate_spots:
             xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
@@ -577,8 +608,6 @@ def find_active_rain_location():
                 if rain_val > 0.0:
                     return f"{name}周辺", lat, lon
 
-        # 2. ピンポイントでヒットしない場合、タイルの画像全ピクセルから雨域セルを検出
-        # 主要エリアのタイル（関東・近畿・九州・東北・沖縄等）を走査
         scan_tiles = [(901, 404), (905, 402), (895, 410), (890, 415), (910, 395)]
         for xtile, ytile in scan_tiles:
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
@@ -586,13 +615,11 @@ def find_active_rain_location():
             if t_res.status_code == 200:
                 img = Image.open(BytesIO(t_res.content)).convert("RGBA")
                 width, height = img.size
-                # 16ピクセル刻みで高速サンプリング
                 for py_idx in range(0, height, 16):
                     for px_idx in range(0, width, 16):
                         pixel = img.getpixel((px_idx, py_idx))
                         _, rain_val, _, _ = rgb_to_rainfall(pixel)
                         if rain_val > 0.0:
-                            # ピクセル座標から緯度経度を逆算
                             n = 2.0 ** 10
                             x = xtile + px_idx / 256.0
                             y = ytile + py_idx / 256.0
@@ -604,7 +631,6 @@ def find_active_rain_location():
         print(f"降雨エリア探索エラー: {e}")
 
     return None, None, None
-
 
 def test_forced_notification():
     """
@@ -623,14 +649,12 @@ def test_forced_notification():
 
     if not lat or not lon:
         print("現在、日本全国の主要監視エリアに降雨が検出されませんでした（全域晴れ/薄くもり）。")
-        # 環境変数のデフォルト位置でフォールバック実行
         lat = float(os.environ.get("TARGET_LAT", "35.1815"))
         lon = float(os.environ.get("TARGET_LON", "136.9066"))
         location_name = "指定座標(降雨なし)"
 
     print(f"検証対象地点決定: {location_name} (緯度:{lat}, 経度:{lon})")
 
-    # 1. 検出地点の実況データ（nowc）取得
     rain_desc, rain_val, color_code = "降水なし", 0.0, "#78909c"
     try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
@@ -649,13 +673,9 @@ def test_forced_notification():
     except Exception as e:
         print(f"実況取得例外: {e}")
 
-    # 2. 検出地点の15時間予測データ（rasrf）取得
     cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, 10)
-
-    # 3. 気象庁Web GUI検証用URLの生成
     jma_gui_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
 
-    # 4. チャットメッセージ構築
     val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
     logs = [
         f"<b>【実降雨エリアデバッグ検証】</b>",
@@ -694,7 +714,5 @@ def test_forced_notification():
 
     print(f"送信完了: {location_name} (lat:{lat}, lon:{lon}) の実降雨データをGoogle Chatへ送信しました。")
 
-
 if __name__ == "__main__":
-    # 雨域探索＆GUI照合リンク付きテストを実行
     test_forced_notification()
