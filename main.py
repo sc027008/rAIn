@@ -140,7 +140,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]                 折れ線グラフ: 積算雨量 [mm]↓"
+    # スペース数 38 個（左右軸の真上へ寄せる調整値を復元）
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 38 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -184,19 +185,21 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 15, "weight": "bold"}
+                        "font": {"size": 16, "family": "Noto Sans JP", "weight": "bold"}
                     }
                 }
             ]
         },
         "options": {
+            "defaultFontFamily": "Noto Sans JP",
             "title": {
                 "display": True,
                 "text": title_text,
-                "fontSize": 14,
+                "fontSize": 16,
                 "fontColor": "#111111",
+                "fontFamily": "Noto Sans JP",
                 "fontStyle": "bold",
-                "padding": 8
+                "padding": 10
             },
             "legend": {"display": False},
             "layout": {
@@ -216,14 +219,16 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 18,
+                        "fontSize": 20,
                         "fontColor": "#111111",
+                        "fontFamily": "Noto Sans JP",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 14,
+                        "fontSize": 15,
                         "maxRotation": 0,
-                        "fontColor": "#111111"
+                        "fontColor": "#111111",
+                        "fontFamily": "Noto Sans JP"
                     }
                 }],
                 "yAxes": [
@@ -235,8 +240,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 14,
-                            "fontColor": "#111111"
+                            "fontSize": 15,
+                            "fontColor": "#111111",
+                            "fontFamily": "Noto Sans JP"
                         }
                     },
                     {
@@ -247,8 +253,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 14,
-                            "fontColor": "#111111"
+                            "fontSize": 15,
+                            "fontColor": "#111111",
+                            "fontFamily": "Noto Sans JP"
                         },
                         "gridLines": {"drawOnChartArea": True}
                     }
@@ -257,12 +264,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         }
     }
 
-    # ★ 対策: Short URL API (POST https://quickchart.io/chart/create) を使用
-    # 長大なJSONを事前にPOSTし、約40文字の短縮URLを取得することでカード破棄を防ぐ
+    # Short URL API (POST https://quickchart.io/chart/create) による短縮URL生成
     try:
         payload = {
             "chart": chart_config,
-            "width": 560,
+            "width": 580,
             "height": 290,
             "backgroundColor": "white",
             "devicePixelRatio": 3
@@ -275,10 +281,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     except Exception as e:
         print(f"⚠️ Short URL発行失敗(GETへフォールバック): {e}")
 
-    # 万が一Short URL発行が失敗した場合の超圧縮GET URL
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
-    return f"https://quickchart.io/chart?c={encoded}&w=560&h=290&bkg=white&devicePixelRatio=3"
+    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3&f=Noto+Sans+JP"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -329,10 +334,16 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     ]
     
     if chart_url:
+        # 画像タップでブラウザ直接表示（onClick: openLink）を完全復元
         widgets.append({
             "image": {
                 "imageUrl": chart_url,
-                "altText": "雨量予測グラフ"
+                "altText": "雨量予測グラフ",
+                "onClick": {
+                    "openLink": {
+                        "url": chart_url
+                    }
+                }
             }
         })
         
