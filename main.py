@@ -19,7 +19,7 @@ def main():
     jst = timezone(timedelta(hours=9))
     now_jst = datetime.now(jst).strftime("%H:%M")
     
-    # 動作確認のため、あえて「テスト豪雨」のカードデータを作成します
+    # 動作確認用にテストカードデータを作成
     card_payload = {
         "cardsV2": [
             {
