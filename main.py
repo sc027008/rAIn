@@ -339,7 +339,7 @@ def test_all_notifications():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     # 【本番運用モード】（普段はこちらを有効化）
-    # main()
+    main()
 
     # 【テスト送信モード】（テスト時は上の main() の頭に # を付け、下の行の # を消してください）
-    test_all_notifications()
+    # test_all_notifications()
