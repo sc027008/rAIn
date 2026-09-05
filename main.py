@@ -498,58 +498,119 @@ def tile_to_latlon_bounds(x, y, zoom):
 
 def test_real_api_fetch():
     """
-    +7h の targetTimes エントリにおける basetime / validtime / elements
-    および実際のレスポンスURLをピンポイントで診断します。
+    [Step 5] nowc (+1h〜+6h) と rasrf (リードタイム>=7h) による
+    15時間連続取得・HTTP 404 ゼロの統合検証を実施します。
     """
+    import math
+    import os
+    import requests
+    from io import BytesIO
+    from PIL import Image
+    from datetime import datetime, timezone, timedelta
+
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    if not webhook_url:
-        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
+    if not webhook_url or not lat_str or not lon_str:
+        print("Execution finished (Missing env vars).")
         return
 
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 +7h HTTP 404 ピンポイント原因特定</b><br>"]
+    logs = ["<b>🔍 [Step 5] 15時間ハイブリッド連続取得 統合検証</b><br>"]
+
+    JMA_COMPLETE_PALETTE = [
+        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
+        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
+        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
+        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
+        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
+        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
+        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
+        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
+    ]
+
+    def local_rgb_to_rainfall(pixel):
+        if not pixel or len(pixel) < 3: return "降水なし", 0.0
+        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
+        r, g, b = pixel[:3]
+        min_dist = float("inf")
+        best = ("降水なし", 0.0)
+        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
+            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+            if dist < min_dist:
+                min_dist = dist
+                best = (desc, val)
+        return best
+
+    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
 
     try:
-        res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
-        if res.status_code == 200:
-            target_times = res.json()
-            base_dt = parse_jma_time(target_times[0]["basetime"])
-            target_7h = base_dt + timedelta(hours=7)
+        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
+        res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
 
-            # +7h に最も近いエントリを抽出
+        n2_times = res_n2.json() if res_n2.status_code == 200 else []
+        rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
+
+        if not n2_times:
+            logs.append("❌ N2 targetTimes 取得失敗")
+            return
+
+        base_dt = parse_jma_time(n2_times[0]["basetime"])
+        target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
+
+        for idx, th in enumerate(target_hours, start=1):
             best_match = None
             min_diff = float("inf")
-            for t in target_times:
-                if "rasrf" in t.get("elements", []):
+            target_layer = ""
+
+            if idx <= 6:
+                # +1h〜+6h は nowc (N2) を参照
+                target_layer = "nowc"
+                for t in n2_times:
                     v_dt = parse_jma_time(t["validtime"])
-                    diff = abs((v_dt - target_7h).total_seconds())
+                    diff = abs((v_dt - th).total_seconds())
                     if diff < min_diff:
                         min_diff = diff
                         best_match = t
-
-            if best_match:
-                b_time = best_match["basetime"]
-                v_time = best_match["validtime"]
-                elements = best_match.get("elements", [])
-                
-                xtile, ytile, _, _ = latlon_to_tile(35.68, 139.76, 10)
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                t_res = requests.get(url, headers=headers, timeout=5)
-
-                logs.append(f"・目標時刻 (+7h): <code>{target_7h.strftime('%Y%m%d%H%M%00')}</code>")
-                logs.append(f"・選定Basetime: <code>{b_time}</code>")
-                logs.append(f"・選定Validtime: <code>{v_time}</code>")
-                logs.append(f"・定義Elements: <code>{elements}</code>")
-                logs.append(f"・検証URL: <code>{url}</code>")
-                logs.append(f"・HTTPステータス: <b>{t_res.status_code}</b>")
             else:
-                logs.append("❌ +7h にマッチするエントリが存在しませんでした。")
+                # +7h〜+15h は rasrf（リードタイム 7時間以上）を参照
+                target_layer = "rasrf"
+                for t in rasrf_times:
+                    if "rasrf" in t.get("elements", []):
+                        b_dt = parse_jma_time(t["basetime"])
+                        v_dt = parse_jma_time(t["validtime"])
+                        lead_hours = (v_dt - b_dt).total_seconds() / 3600
+                        if lead_hours >= 7:
+                            diff = abs((v_dt - th).total_seconds())
+                            if diff < min_diff:
+                                min_diff = diff
+                                best_match = t
+
+            if best_match and min_diff < 1800:
+                b_time, v_time = best_match["basetime"], best_match["validtime"]
+                if target_layer == "nowc":
+                    elem = best_match.get("elements", ["hrpns"])[0]
+                    url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                else:
+                    url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+
+                t_res = requests.get(url, headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel = img.getpixel((px, py))
+                    desc, val = local_rgb_to_rainfall(pixel)
+                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{desc} ({val}mm/h)</b>")
+                else:
+                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
+            else:
+                logs.append(f"・<b>+{idx}h [{target_layer}]</b>: マッチなし")
 
     except Exception as e:
-        logs.append(f"❌ 診断エラー: {e}")
+        logs.append(f"❌ 実行エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 +7h 404診断結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 Step 5 統合検証結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
