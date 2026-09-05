@@ -479,65 +479,53 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    N2.json のデータ件数・validtime の時間範囲（先頭〜末尾）、
-    および他エンドポイントのHTTPステータスをそのまま確認・ログ化します。
+    N1.json, N2.json, N3.json の各ファイルに格納されている
+    件数、basetime、カバー時間帯（先頭〜末尾validtime）、定義要素名を完全出力します。
     """
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
 
-    if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+    if not webhook_url:
+        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>📊 JMA targetTimes 範囲＆別エンドポイント調査</b><br>"]
+    logs = ["<b>🔍 N1 / N2 / N3 全データ範囲一覧検証</b><br>"]
 
-    try:
-        # 1. N2.json の validtime 全件範囲調査
-        url_n2 = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
-        res_n2 = requests.get(url_n2, headers=headers, timeout=10)
-        logs.append(f"<b>N2.json 取得ステータス</b>: HTTP {res_n2.status_code}")
+    endpoints = ["N1.json", "N2.json", "N3.json"]
 
-        if res_n2.status_code == 200:
-            n2_data = res_n2.json()
-            logs.append(f"・N2配列の総データ件数: {len(n2_data)}件")
-            if n2_data:
-                first_valid = n2_data[0].get("validtime")
-                last_valid = n2_data[-1].get("validtime")
-                basetime = n2_data[0].get("basetime")
-                logs.append(f"・Basetime: <code>{basetime}</code>")
-                logs.append(f"・先頭Validtime (+0h側): <code>{first_valid}</code>")
-                logs.append(f"・末尾Validtime (最大予測側): <code>{last_valid}</code>")
-
-                # 末尾（配列内で最も未来の予測時間）での実際のタイル画像取得テスト
-                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-                elem = n2_data[-1].get("elements", ["hrpns"])[0]
-                last_tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{last_valid}/surf/{elem}/10/{xtile}/{ytile}.png"
-                t_res = requests.get(last_tile_url, headers=headers, timeout=5)
-
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    extrema = img.getextrema()
-                    has_pixels = extrema[3][1] > 0 if len(extrema) >= 4 else True
-                    logs.append(f"・末尾タイル({last_valid}, {elem}): HTTP 200 | 座標RGBA:{pixel} | 全体描画あり:{has_pixels}")
+    for ep in endpoints:
+        url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_{ep}"
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                count = len(data)
+                if count > 0:
+                    b_time = data[0].get("basetime", "不明")
+                    first_v = data[0].get("validtime", "不明")
+                    last_v = data[-1].get("validtime", "不明")
+                    
+                    # 要素名の集約
+                    elem_set = set()
+                    for item in data:
+                        for e in item.get("elements", []):
+                            elem_set.add(e)
+                    
+                    logs.append(f"<b>【{ep}】</b> (件数: {count}件)")
+                    logs.append(f"・Basetime: <code>{b_time}</code>")
+                    logs.append(f"・先頭Valid: <code>{first_first := first_v}</code>")
+                    logs.append(f"・末尾Valid: <code>{last_v}</code>")
+                    logs.append(f"・定義要素: <code>{list(elem_set)}</code><br>")
                 else:
-                    logs.append(f"・末尾タイル({last_valid}, {elem}): <font color=\"red\">HTTP {t_res.status_code}</font>")
-
-        # 2. 関連する別エンドポイント（N1, N2, N3等）の応答確認
-        logs.append("<br><b>[関連エンドポイント応答確認]</b>")
-        for name in ["N1.json", "N2.json", "N3.json"]:
-            chk_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_{name}"
-            c_res = requests.get(chk_url, headers=headers, timeout=5)
-            logs.append(f"・targetTimes_{name}: HTTP {c_res.status_code}")
-
-    except Exception as e:
-        logs.append(f"❌ 調査例外エラー: {e}")
+                    logs.append(f"<b>【{ep}】</b>: データ0件<br>")
+            else:
+                logs.append(f"<b>【{ep}】</b>: <font color=\"red\">HTTP {res.status_code}</font><br>")
+        except Exception as e:
+            logs.append(f"<b>【{ep}】</b>: 通信エラー ({e})<br>")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "📊 JMAデータ範囲検証", debug_text, ICON_RAINY)
+    # 位置情報を含めない安全なダミー座標値でカード送信
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔍 エンドポイント全比較ログ", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
