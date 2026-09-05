@@ -2,12 +2,12 @@ name: Rain Alert Runner
 
 on:
   schedule:
-    # JST 8:00〜19:00 (UTC 23:00〜10:00) の間、5分おきに自動実行
-    - cron: '*/5 23-10 * * *'
+    # JST 8:00〜19:00 (UTC 23:00 および 0:00〜10:00) の間、5分おきに自動実行
+    - cron: '*/5 23,0-10 * * *'
   workflow_dispatch: # 手動実行ボタンを有効化
 
 permissions:
-  contents: write # state.jsonの自動コミットに必要な権限を明記
+  contents: write # state.jsonの自動コミットに必要な権限
 
 jobs:
   check-rain:
