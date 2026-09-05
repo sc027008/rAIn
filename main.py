@@ -495,79 +495,106 @@ def tile_to_latlon_bounds(x, y, zoom):
     se_lat = math.degrees(se_lat_rad)
 
     return nw_lat, nw_lon, se_lat, se_lon
+    
 def test_real_api_fetch():
     """
-    nowc および rasrf の targetTimes.json に存在する全エントリに対し
-    実際に画像タイルをリクエストし、HTTPステータスと取得可否の生の事実のみを出力します。
+    /immed/ パスを適用し、+1h〜+15h の全15時間の予報タイルが
+    HTTP 404 なしで完全取得できるか検証します。
     """
+    import math
+    import os
+    import requests
+    from io import BytesIO
+    from PIL import Image
+    from datetime import datetime, timezone, timedelta
+
+    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
-    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-
     if not webhook_url or not lat_str or not lon_str:
         print("Execution finished (Missing env vars).")
         return
 
     lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 気象庁タイルAPI 実データ疎通検証（生の事実）</b><br>"]
+    logs = ["<b>🔍 /immed/ パス適用 15時間全データ取得検証</b><br>"]
+
+    JMA_COMPLETE_PALETTE = [
+        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
+        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
+        ((33, 140, 255), 5.0, "雨"), ((65, 140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
+        ((0, 65, 255), 10.0, "やや強い雨"), ((0, 0, 255), 10.0, "やや強い雨"), ((90, 120, 240), 10.0, "やや強い雨"),
+        ((250, 245, 0), 20.0, "強い雨"), ((255, 255, 0), 20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
+        ((255, 153, 0), 30.0, "激しい雨"), ((255, 165, 0), 30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
+        ((255, 40, 0), 50.0, "非常に激しい雨"), ((255, 0, 0), 50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
+        ((180, 0, 104), 80.0, "猛烈な雨"), ((210, 0, 170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
+    ]
+
+    def local_rgb_to_rainfall(pixel):
+        if not pixel or len(pixel) < 3: return "降水なし", 0.0
+        if (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255): return "降水なし", 0.0
+        r, g, b = pixel[:3]
+        min_dist = float("inf")
+        best = ("降水なし", 0.0)
+        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
+            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+            if dist < min_dist:
+                min_dist = dist
+                best = (desc, val)
+        return best
 
     xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
 
-    # 1. nowc (N1 / N2) 全件検証
-    for layer_name, url_meta in [("nowc_N1", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"),
-                                 ("nowc_N2", "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json")]:
-        try:
-            res = requests.get(url_meta, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                logs.append(f"<b>【{layer_name}】</b> (全{len(data)}件)")
-                success_count = 0
-                for item in data:
-                    b_time, v_time = item["basetime"], item["validtime"]
-                    elem = item.get("elements", ["hrpns"])[0]
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
-                    t_res = requests.get(tile_url, headers=headers, timeout=5)
-                    if t_res.status_code == 200:
-                        success_count += 1
-                logs.append(f"・HTTP 200 取得成功: <b>{success_count} / {len(data)} 件</b><br>")
-            else:
-                logs.append(f"<b>【{layer_name}】</b> メタデータ取得失敗: HTTP {res.status_code}<br>")
-        except Exception as e:
-            logs.append(f"❌ {layer_name} 検証エラー: {e}<br>")
-
-    # 2. rasrf 全件検証
     try:
+        res_n2 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json", headers=headers, timeout=5)
         res_rasrf = requests.get("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json", headers=headers, timeout=5)
-        if res_rasrf.status_code == 200:
-            rasrf_data = res_rasrf.json()
-            logs.append(f"<b>【rasrf】</b> (全{len(rasrf_data)}件)")
-            
-            rasrf_results = []
-            for item in rasrf_data:
-                if "rasrf" in item.get("elements", []):
-                    b_time, v_time = item["basetime"], item["validtime"]
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                    t_res = requests.get(tile_url, headers=headers, timeout=5)
-                    rasrf_results.append((b_time, v_time, t_res.status_code))
 
-            # ステータス別出力
-            success_list = [f"Base:{b} | Valid:{v}" for b, v, code in rasrf_results if code == 200]
-            failed_list = [f"Base:{b} | Valid:{v} (HTTP {code})" for b, v, code in rasrf_results if code != 200]
+        n2_times = res_n2.json() if res_n2.status_code == 200 else []
+        rasrf_times = res_rasrf.json() if res_rasrf.status_code == 200 else []
 
-            logs.append(f"・HTTP 200 成功コマ件数: <b>{len(success_list)} 件</b>")
-            if success_list:
-                logs.append("  [成功コマ例]: " + ", ".join(success_list[:3]))
-            logs.append(f"・HTTP 404 エラー件数: <b>{len(failed_list)} 件</b>")
-            if failed_list:
-                logs.append("  [失敗コマ例]: " + ", ".join(failed_list[:3]))
-        else:
-            logs.append(f"<b>【rasrf】</b> メタデータ取得失敗: HTTP {res_rasrf.status_code}")
+        now = datetime.now(timezone(timedelta(hours=9)))
+        start_dt = now + timedelta(hours=1)
+        target_hours = [start_dt + timedelta(hours=i) for i in range(15)]
+
+        for idx, th in enumerate(target_hours, start=1):
+            best_match = None
+            min_diff = float("inf")
+            target_layer = "nowc" if idx == 1 else "rasrf"
+            source_list = n2_times if idx == 1 else rasrf_times
+
+            for t in source_list:
+                if target_layer == "nowc" or "rasrf" in t.get("elements", []):
+                    v_dt = parse_jma_time(t["validtime"])
+                    diff = abs((v_dt - th).total_seconds())
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_match = t
+
+            if best_match:
+                b_time, v_time = best_match["basetime"], best_match["validtime"]
+                if target_layer == "nowc":
+                    elem = best_match.get("elements", ["hrpns"])[0]
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                else:
+                    # member パスを /immed/ に指定
+                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/immed/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+
+                t_res = requests.get(tile_url, headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel = img.getpixel((px, py))
+                    desc, val = local_rgb_to_rainfall(pixel)
+                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
+                else:
+                    logs.append(f"・<b>+{idx}h [{target_layer}]</b> (Valid:{v_time}): <font color=\"red\">HTTP {t_res.status_code}</font> URL:<code>{tile_url}</code>")
+            else:
+                logs.append(f"・<b>+{idx}h</b> ({th.strftime('%Y%m%d%H%M00')}): 該当データなし")
+
     except Exception as e:
-        logs.append(f"❌ rasrf 検証エラー: {e}")
+        logs.append(f"❌ 実行エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 実データ疎通確認結果", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 /immed/ 適用結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
