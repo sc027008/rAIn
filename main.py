@@ -479,66 +479,58 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    rasrf 15時間分のコマごとに、選択されたbasetime/validtime、
-    HTTPステータス、およびピクセルのRGBA値を直接ログ化して送信します。
+    全国主要エリアから雨雲が存在するタイルを自動検出し、
+    実際のピクセルRGB値とカラーパレット判定結果を検証します。
     """
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-
-    if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+    if not webhook_url:
+        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 rasrf 15コマ別レスポンス詳細ログ</b><br>"]
+    logs = ["<b>🔍 雨雲自動検出＆パレット判定検証</b><br>"]
+
+    # 全国主要エリアの検証用座標
+    test_coords = [
+        ("九州", 31.59, 130.55),
+        ("関西", 34.69, 135.50),
+        ("東海", 35.18, 136.90),
+        ("関東", 35.68, 139.76),
+        ("東北", 38.26, 140.87),
+        ("北海道", 43.06, 141.35),
+    ]
 
     try:
-        url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
-        res = requests.get(url_target, headers=headers, timeout=10)
-        
-        if res.status_code != 200:
-            logs.append(f"❌ targetTimes.json 取得失敗: HTTP {res.status_code}")
-        else:
-            target_times = res.json()
-            xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-            base_dt = parse_jma_time(target_times[0]["basetime"])
-            target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
+        res_n1 = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=5)
+        if res_n1.status_code == 200:
+            n1_item = res_n1.json()[0]
+            b_time, v_time = n1_item["basetime"], n1_item["validtime"]
+            elem = n1_item.get("elements", ["hrpns"])[0]
 
-            for idx, th in enumerate(target_hours, start=1):
-                best_match = None
-                min_diff = float("inf")
+            found_rain = False
+            for region, lat, lon in test_coords:
+                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
+                t_res = requests.get(url, headers=headers, timeout=5)
                 
-                for t in target_times:
-                    if "rasrf" in t.get("elements", []):
-                        v_dt = parse_jma_time(t["validtime"])
-                        diff = abs((v_dt - th).total_seconds())
-                        if diff < min_diff:
-                            min_diff = diff
-                            best_match = t
-
-                if best_match and min_diff < 1800:
-                    b_time = best_match["basetime"]
-                    v_time = best_match["validtime"]
-                    tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/none/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                    
-                    t_res = requests.get(tile_url, headers=headers, timeout=5)
-                    if t_res.status_code == 200:
-                        img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    # タイル全体に非透明ピクセル（雨雲データ）が含まれているか判定
+                    if img.getbbox():
                         pixel = img.getpixel((px, py))
-                        _, val, _, _ = rgb_to_rainfall(pixel)
-                        logs.append(f"<b>+{idx}h</b> ({v_time}): HTTP 200 | RGBA:<code>{pixel}</code> -> <b>{val}mm</b>")
-                    else:
-                        logs.append(f"<b>+{idx}h</b> ({v_time}): <font color=\"red\">HTTP {t_res.status_code}</font>")
-                else:
-                    logs.append(f"<b>+{idx}h</b>: マッチするターゲットなし")
+                        desc, val, color, rank = rgb_to_rainfall(pixel)
+                        logs.append(f"<b>【{region}エリアで雨雲タイル検出】</b><br>・Validtime: {v_time}<br>・指定座標RGBA: <code>{pixel}</code><br>・パレット判定結果: <b>{desc} ({val} mm/h)</b><br>")
+                        found_rain = True
+                        break
+
+            if not found_rain:
+                logs.append("※指定された主要エリアのタイル上には現在雨雲データが確認できませんでした。")
 
     except Exception as e:
-        logs.append(f"❌ 実行エラー: {e}")
+        logs.append(f"❌ 検証エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 rasrf 15コマ詳細検証", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 パレット自動判定テスト", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
