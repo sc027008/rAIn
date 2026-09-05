@@ -479,8 +479,8 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    全国主要エリアから雨雲が存在するタイルを自動検出し、
-    実際のピクセルRGB値とカラーパレット判定結果を検証します。
+    雨雲タイル内から実際に色のついているピクセルを直接検索・抽出し、
+    生RGB値とカラーパレット判定結果を可視化します。
     """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     if not webhook_url:
@@ -488,9 +488,8 @@ def test_real_api_fetch():
         return
 
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 雨雲自動検出＆パレット判定検証</b><br>"]
+    logs = ["<b>🔍 雨雲ピクセル直接抽出＆パレット判定検証</b><br>"]
 
-    # 全国主要エリアの検証用座標
     test_coords = [
         ("九州", 31.59, 130.55),
         ("関西", 34.69, 135.50),
@@ -507,30 +506,42 @@ def test_real_api_fetch():
             b_time, v_time = n1_item["basetime"], n1_item["validtime"]
             elem = n1_item.get("elements", ["hrpns"])[0]
 
-            found_rain = False
+            found_pixel = None
+            found_region = ""
+
             for region, lat, lon in test_coords:
-                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+                xtile, ytile, _, _ = latlon_to_tile(lat, lon, 10)
                 url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{b_time}/none/{v_time}/surf/{elem}/10/{xtile}/{ytile}.png"
                 t_res = requests.get(url, headers=headers, timeout=5)
                 
                 if t_res.status_code == 200:
                     img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    # タイル全体に非透明ピクセル（雨雲データ）が含まれているか判定
-                    if img.getbbox():
-                        pixel = img.getpixel((px, py))
-                        desc, val, color, rank = rgb_to_rainfall(pixel)
-                        logs.append(f"<b>【{region}エリアで雨雲タイル検出】</b><br>・Validtime: {v_time}<br>・指定座標RGBA: <code>{pixel}</code><br>・パレット判定結果: <b>{desc} ({val} mm/h)</b><br>")
-                        found_rain = True
-                        break
+                    # タイル内からアルファ値>0 かつ非白色のピクセルを捜索
+                    for x in range(img.width):
+                        for y in range(img.height):
+                            p = img.getpixel((x, y))
+                            if len(p) >= 4 and p[3] > 0 and p[:3] != (255, 255, 255):
+                                found_pixel = p
+                                found_region = region
+                                break
+                        if found_pixel:
+                            break
+                if found_pixel:
+                    break
 
-            if not found_rain:
-                logs.append("※指定された主要エリアのタイル上には現在雨雲データが確認できませんでした。")
+            if found_pixel:
+                desc, val, color, rank = rgb_to_rainfall(found_pixel)
+                logs.append(f"<b>【{found_region}エリアで実雨雲ピクセル抽出】</b><br>")
+                logs.append(f"・抽出RGBA: <code>{found_pixel}</code><br>")
+                logs.append(f"・判定結果: <b>{desc} ({val} mm/h)</b>")
+            else:
+                logs.append("※現在、テスト対象エリアのタイル内に描画ピクセルが検出されませんでした。")
 
     except Exception as e:
         logs.append(f"❌ 検証エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 パレット自動判定テスト", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, 0.0, 0.0, "🔬 修正パレット判定テスト", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
