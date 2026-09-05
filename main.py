@@ -580,7 +580,7 @@ def main():
     else:
         save_state(rain_val, current_rain_val, last_notified_rank, last_notified_type, last_evening_alert_date)
 
-    # 4) 夕方定時通知（今夜アメデス）：17時台に積算雨量が閾値を超えている場合のみ実行
+    # 4) 夕方定時通知（今宵アメデス）：17時台に積算雨量が閾値を超えている場合のみ実行
     if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
         _, cum_15h, _, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
         
@@ -588,7 +588,7 @@ def main():
             # 本文中の積算雨量を整数表示
             cum_15h_int = int(cum_15h)
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
-            send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", formatted_text, ICON_NIGHT_RAIN, today_str)
+            send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, today_str)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
 # =========================================================
@@ -597,7 +597,7 @@ def main():
 def test_all_notifications():
     """
     ローカル開発環境での動作検証・UI表示確認用関数。
-    サンプルデータを用いて、全3パターン（「アメデス」「雨上がりの予感」「今夜アメデス」）の
+    サンプルデータを用いて、全3パターン（「アメデス」「雨上がりの予感」「今宵アメデス」）の
     カードメッセージとグラフ画像を Google Chat へ即時送信します。
     """
     init_state_file()
@@ -631,9 +631,9 @@ def test_all_notifications():
     text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
     send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", text_weak, ICON_RAINBOW, sample_chart_url)
 
-    # 3. 今夜アメデス（17時定時通知）テスト
+    # 3. 今宵アメデス（17時定時通知）テスト
     text_evening = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
-    send_google_chat_card(webhook_url, lat, lon, "今夜アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
+    send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", text_evening, ICON_NIGHT_RAIN, sample_chart_url)
 
     print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
 
