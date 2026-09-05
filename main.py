@@ -140,8 +140,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # タイトル部分（20pt、スペース20個）
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 20 + "折れ線グラフ: 積算雨量 [mm]↓"
+    # スペース個数を 15 個へ調整
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 15 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -218,7 +218,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 20, # 24ptから20ptへ適正化
+                        "fontSize": 20,
                         "fontColor": "#111111",
                         "fontFamily": "sans-serif",
                         "fontStyle": "bold"
