@@ -479,8 +479,8 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    N2.jsonの実際のデータ構造（elementsの中身）と、
-    複数要素名によるタイル取得結果・ピクセル色をそのまま完全ログ化してGoogle Chatへ送信します。
+    N2.json のデータ件数・validtime の時間範囲（先頭〜末尾）、
+    および他エンドポイントのHTTPステータスをそのまま確認・ログ化します。
     """
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -492,61 +492,52 @@ def test_real_api_fetch():
 
     lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔬 N2.json 生データ構造＆全要素検証</b><br>"]
+    logs = ["<b>📊 JMA targetTimes 範囲＆別エンドポイント調査</b><br>"]
 
     try:
-        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
-        res = requests.get(url_target, headers=headers, timeout=10)
-        target_times = res.json()
-        
-        xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-        base_dt = parse_jma_time(target_times[0]["basetime"])
-        
-        # 1. N2.json の先頭要素のキー一覧と、elementsに何が入っているかをログ化
-        sample_item = target_times[0]
-        logs.append(f"<b>[JSON構造確認]</b><br>キー一覧: {list(sample_item.keys())}")
-        logs.append(f"先頭要素の'elements': {sample_item.get('elements', 'なし')}")
-        
-        # +1時間後と+14時間後の2地点で実際の取得テストを実施
-        check_hours = [1, 14]
-        
-        for h in check_hours:
-            target_dt = base_dt + timedelta(hours=h)
-            best_match = min(target_times, key=lambda x: abs((parse_jma_time(x["validtime"]) - target_dt).total_seconds()))
-            
-            basetime = best_match["basetime"]
-            validtime = best_match["validtime"]
-            raw_elements = best_match.get("elements", [])
-            
-            logs.append(f"<br><b>【+{h}時間後 (Valid: {validtime})】</b>")
-            logs.append(f"N2内に定義されているelements: <code>{raw_elements}</code>")
-            
-            # テスト対象の要素名リスト（N2内の定義要素 ＋ 代表的な要素名 candidates）
-            test_candidates = list(dict.fromkeys(raw_elements + ["hrpns", "rasd", "hrpns_sample"]))
-            
-            for elem in test_candidates:
-                tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{elem}/10/{xtile}/{ytile}.png"
-                t_res = requests.get(tile_url, headers=headers, timeout=5)
-                
+        # 1. N2.json の validtime 全件範囲調査
+        url_n2 = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
+        res_n2 = requests.get(url_n2, headers=headers, timeout=10)
+        logs.append(f"<b>N2.json 取得ステータス</b>: HTTP {res_n2.status_code}")
+
+        if res_n2.status_code == 200:
+            n2_data = res_n2.json()
+            logs.append(f"・N2配列の総データ件数: {len(n2_data)}件")
+            if n2_data:
+                first_valid = n2_data[0].get("validtime")
+                last_valid = n2_data[-1].get("validtime")
+                basetime = n2_data[0].get("basetime")
+                logs.append(f"・Basetime: <code>{basetime}</code>")
+                logs.append(f"・先頭Validtime (+0h側): <code>{first_valid}</code>")
+                logs.append(f"・末尾Validtime (最大予測側): <code>{last_valid}</code>")
+
+                # 末尾（配列内で最も未来の予測時間）での実際のタイル画像取得テスト
+                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
+                elem = n2_data[-1].get("elements", ["hrpns"])[0]
+                last_tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{last_valid}/surf/{elem}/10/{xtile}/{ytile}.png"
+                t_res = requests.get(last_tile_url, headers=headers, timeout=5)
+
                 if t_res.status_code == 200:
                     img = Image.open(BytesIO(t_res.content)).convert("RGBA")
                     pixel = img.getpixel((px, py))
-                    # 画像内に1ピクセルでも非透明（Alpha > 0）が存在するか検証
                     extrema = img.getextrema()
-                    has_visible_pixels = extrema[3][1] > 0 if len(extrema) >= 4 else True
-                    
-                    logs.append(
-                        f"・elem='<b>{elem}</b>': HTTP 200 | 座標RGBA:{pixel} | "
-                        f"画像全体で描画あり: <b>{has_visible_pixels}</b>"
-                    )
+                    has_pixels = extrema[3][1] > 0 if len(extrema) >= 4 else True
+                    logs.append(f"・末尾タイル({last_valid}, {elem}): HTTP 200 | 座標RGBA:{pixel} | 全体描画あり:{has_pixels}")
                 else:
-                    logs.append(f"・elem='<b>{elem}</b>': <font color=\"red\">HTTP {t_res.status_code}</font>")
+                    logs.append(f"・末尾タイル({last_valid}, {elem}): <font color=\"red\">HTTP {t_res.status_code}</font>")
+
+        # 2. 関連する別エンドポイント（N1, N2, N3等）の応答確認
+        logs.append("<br><b>[関連エンドポイント応答確認]</b>")
+        for name in ["N1.json", "N2.json", "N3.json"]:
+            chk_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_{name}"
+            c_res = requests.get(chk_url, headers=headers, timeout=5)
+            logs.append(f"・targetTimes_{name}: HTTP {c_res.status_code}")
 
     except Exception as e:
-        logs.append(f"❌ 検証実行エラー: {e}")
+        logs.append(f"❌ 調査例外エラー: {e}")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 JMA生構造デバッグ", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "📊 JMAデータ範囲検証", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
