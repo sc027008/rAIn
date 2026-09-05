@@ -2,9 +2,9 @@ name: Rain Alert Runner
 
 on:
   schedule:
-    # 5分おきに自動実行（UTC表記）
+    # 5分おきに自動実行
     - cron: '*/5 * * * *'
-  workflow_dispatch: # 手動実行ボタンの有効化
+  workflow_dispatch:
 
 jobs:
   check-rain:
@@ -20,7 +20,7 @@ jobs:
 
       - name: 必要なライブラリのインストール
         run: |
-          pip install requests pillow
+          pip install requests pillow jpholiday
 
       - name: 雨量チェックプログラムの実行
         env:
@@ -28,3 +28,10 @@ jobs:
           TARGET_LAT: ${{ secrets.TARGET_LAT }}
           TARGET_LON: ${{ secrets.TARGET_LON }}
         run: python main.py
+
+      - name: 状態(state.json)の更新保存
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update rain state [skip ci]" && git push)
