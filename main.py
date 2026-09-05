@@ -129,8 +129,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    # スペース数を拡張し、両端の軸の真上まで寄せる
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 28 + "折れ線グラフ: 積算雨量 [mm]↓"
+    # スペースを広げてタイトルを左右両端の軸上に寄せる
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 32 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -176,7 +176,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                         "align": "end",
                         "offset": -2,
                         "color": "#111111",
-                        "font": {"size": 18, "family": "sans-serif", "weight": "bold"} # 数値特大化 (18pt)
+                        "font": {"size": 16, "family": "sans-serif", "weight": "bold"}
                     }
                 }
             ]
@@ -186,9 +186,9 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
             "title": {
                 "display": True,
                 "text": title_text,
-                "fontSize": 18,                       # タイトル特大化 (18pt)
+                "fontSize": 15,
                 "fontColor": "#111111",
-                "fontFamily": "sans-serif",          # 確実にゴシック描画される標準指定
+                "fontFamily": "sans-serif",
                 "fontStyle": "bold",
                 "padding": 10
             },
@@ -212,13 +212,13 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                     "scaleLabel": {
                         "display": True,
                         "labelString": "時間後",
-                        "fontSize": 22,               # 下部ラベル特大化 (22pt)
+                        "fontSize": 20,
                         "fontColor": "#111111",
                         "fontFamily": "sans-serif",
                         "fontStyle": "bold"
                     },
                     "ticks": {
-                        "fontSize": 16,               # 横軸数値特大化 (16pt)
+                        "fontSize": 15,
                         "maxRotation": 0,
                         "minRotation": 0,
                         "fontColor": "#111111",
@@ -234,7 +234,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y1_max,
                             "stepSize": step_y1,
-                            "fontSize": 16,           # 縦軸数値特大化 (16pt)
+                            "fontSize": 15,
                             "fontColor": "#111111",
                             "fontFamily": "sans-serif"
                         }
@@ -247,7 +247,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
                             "min": 0,
                             "max": y2_max,
                             "stepSize": step_y2,
-                            "fontSize": 16,           # 縦軸数値特大化 (16pt)
+                            "fontSize": 15,
                             "fontColor": "#111111",
                             "fontFamily": "sans-serif"
                         },
@@ -260,7 +260,8 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         }
     }
     encoded = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3"
+    # フォント未指定・標準指定によりQuickChartのシステムゴシック体(sans-serif)を使用
+    return f"https://quickchart.io/chart?c={encoded}&w=580&h=290&bkg=white&devicePixelRatio=3"
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -311,7 +312,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     ]
     
     if chart_url:
-        # ★ 画像タップでブラウザ直接表示（ピンチズーム拡大可能）
+        # 正しい公式スキーマに沿って onClick (openLink) を復元
         widgets.append({
             "image": {
                 "imageUrl": chart_url,
@@ -481,7 +482,7 @@ def test_all_notifications():
 
     text_amedes = (
         f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
-        f"<font color=\"#757575\">•今後3時間積算 102 mm<br>•今後15時間積算 145 mm</font>"
+        f"<font color=\"#757575\">•今後3時間積算 {sum(sample_rain[:3]) + current_rain_val} mm<br>•今後15時間積算 {sum(sample_rain) + current_rain_val} mm</font>"
     )
     send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY, sample_chart_url)
 
