@@ -514,11 +514,15 @@ def local_rgb_to_rainfall(pixel):
 
 def test_real_api_fetch():
     """
-    rasrf/targetTimes.json の中身を推測・フィルター・検索処理を一切行わずに
-    生のメタデータ（basetime, validtime, member, elements）としてそのまま全件出力します。
+    targetTimes.json のうち 'rasrf' を含むエントリのみを抽出し、
+    JSON内に記載された basetime / member / validtime / element を
+    改変・推測せずそのまま使用して画像タイルを取得します。
     """
+    import math
     import os
     import requests
+    from io import BytesIO
+    from PIL import Image
 
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
@@ -527,38 +531,77 @@ def test_real_api_fetch():
         print("Execution finished (Missing env vars).")
         return
 
+    lat, lon = float(lat_str), float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 rasrf/targetTimes.json 生データ全件ダンプ結果</b><br>"]
+    logs = ["<b>📊 rasrf メタデータ完全準拠 疎通結果</b><br>"]
+
+    JMA_COMPLETE_PALETTE = [
+        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
+        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
+        ((33,  140, 255), 5.0, "雨"), ((65,  140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
+        ((0,   65,  255), 10.0, "やや強い雨"), ((0,   0,   255), 10.0, "やや強い雨"), ((90,  120, 240), 10.0, "やや強い雨"),
+        ((250, 245, 0),   20.0, "強い雨"), ((255, 255, 0),   20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
+        ((255, 153, 0),   30.0, "激しい雨"), ((255, 165, 0),   30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
+        ((255, 40,  0),   50.0, "非常に激しい雨"), ((255, 0,   0),   50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
+        ((180, 0,   104), 80.0, "猛烈な雨"), ((210, 0,   170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
+    ]
+
+    def local_rgb_to_rainfall(pixel):
+        if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255):
+            return "降水なし", 0.0
+        r, g, b = pixel[:3]
+        min_dist = float("inf")
+        best = ("降水なし", 0.0)
+        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
+            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+            if dist < min_dist:
+                min_dist = dist
+                best = (desc, val)
+        return best
+
+    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
 
     try:
         url = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
         res = requests.get(url, headers=headers, timeout=5)
         
         if res.status_code == 200:
-            data = res.json()
-            logs.append(f"<b>総件数</b>: {len(data)} 件<br>")
+            raw_data = res.json()
             
-            # 生のデータをそのまま全件フォーマット（一切の処理を行わない）
-            for i, item in enumerate(data, start=1):
-                b = item.get("basetime", "なし")
-                v = item.get("validtime", "なし")
-                m = item.get("member", "なし(未定義)")
-                e = ",".join(item.get("elements", []))
+            # elements に 'rasrf' が含まれる有効な予報フレームのみを抽出（時刻順ソート）
+            rasrf_items = [
+                item for item in raw_data 
+                if "rasrf" in item.get("elements", [])
+            ]
+            rasrf_items.sort(key=lambda x: x["validtime"])
+
+            logs.append(f"<b>検出された有効予報コマ数</b>: {len(rasrf_items)} 件<br>")
+
+            # JSON内の定義（b_time, member, v_time）をそのまま使ってリクエスト
+            for idx, item in enumerate(rasrf_items, start=1):
+                b_time = item["basetime"]
+                v_time = item["validtime"]
+                member = item.get("member", "none")
                 
-                logs.append(f"[{i:03d}] Valid: <b>{v}</b> | Base: <code>{b}</code> | Member: <code>{m}</code> | Elem: <code>{e}</code>")
+                tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/{member}/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
+                t_res = requests.get(tile_url, headers=headers, timeout=5)
+
+                if t_res.status_code == 200:
+                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                    pixel = img.getpixel((px, py))
+                    desc, val = local_rgb_to_rainfall(pixel)
+                    logs.append(f"[{idx:02d}] <b>Valid:{v_time}</b> (Base:{b_time} | Member:{member}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
+                else:
+                    logs.append(f"[{idx:02d}] <b>Valid:{v_time}</b> (Base:{b_time} | Member:{member}): <font color=\"red\">HTTP {t_res.status_code}</font>")
+
         else:
             logs.append(f"❌ JSON取得失敗: HTTP {res.status_code}")
 
     except Exception as e:
         logs.append(f"❌ 実行エラー: {e}")
 
-    # メッセージ長制限のため上位50件を出力
-    debug_text = "<br>".join(logs[:52])
-    if len(logs) > 52:
-        debug_text += f"<br>...他 {len(logs)-52} 件省略"
-
-    lat, lon = float(lat_str), float(lon_str)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 生メタデータ調査ログ", debug_text, ICON_RAINY)
+    debug_text = "<br>".join(logs)
+    send_google_chat_card(webhook_url, lat, lon, "🔬 データ構造準拠テスト結果", debug_text, ICON_RAINY)
     print("Execution completed successfully.")
 
 # =========================================================
