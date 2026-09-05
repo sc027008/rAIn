@@ -479,48 +479,28 @@ def main():
 # =========================================================
 def test_real_api_fetch():
     """
-    rasrf の targetTimes.json の実データ構造を抽出し、
-    時間刻みや配列の中身を直接確認します。
+    修正されたrasrf抽出ロジックで実データ・グラフを取得し、Google Chatへ送信します。
     """
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
 
-    if not webhook_url:
-        print("Execution finished (Missing CHAT_WEBHOOK_URL).")
+    if not webhook_url or not lat_str or not lon_str:
+        print("Execution finished (Missing env vars).")
         return
 
+    lat = float(lat_str)
+    lon = float(lon_str)
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>🔍 rasrf targetTimes.json 構造解析</b><br>"]
+    logs = ["<b>🔍 rasrf 降順補正後の15時間予測検証</b><br>"]
 
-    try:
-        url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
-        res = requests.get(url_target, headers=headers, timeout=10)
-        logs.append(f"HTTP ステータス: {res.status_code}")
-        
-        if res.status_code == 200:
-            data = res.json()
-            logs.append(f"総件数: {len(data)}件")
-            
-            if data:
-                b_time = data[0].get("basetime")
-                logs.append(f"Basetime: <code>{b_time}</code>")
-                
-                # 先頭5件と末尾5件の validtime を抽出して時間刻みを確認
-                v_times = [d.get("validtime") for d in data]
-                logs.append(f"先頭5件: <code>{v_times[:5]}</code>")
-                logs.append(f"末尾5件: <code>{v_times[-5:]}</code>")
-                
-                # 要素名 (elements) の確認
-                elem_set = set()
-                for item in data:
-                    for e in item.get("elements", []):
-                        elem_set.add(e)
-                logs.append(f"定義要素: <code>{list(elem_set)}</code>")
-                
-    except Exception as e:
-        logs.append(f"❌ エラー: {e}")
+    # 15時間予測データの取得テスト
+    cum_3h, cum_15h, hourly_rain, chart_url = get_future_cumulative_rain_data(lat, lon, 0.0)
+    logs.append(f"15時間積算: <b>{cum_15h} mm</b>")
+    logs.append(f"毎時予測(15h): <code>{hourly_rain}</code>")
 
     debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, 0.0, 0.0, "🔍 rasrf 構造デバッグ", debug_text, ICON_RAINY)
+    send_google_chat_card(webhook_url, lat, lon, "🧪 rasrf15時間予測テスト", debug_text, ICON_RAINY, chart_url)
     print("Execution completed successfully.")
 
 # =========================================================
