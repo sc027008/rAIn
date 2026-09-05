@@ -4,12 +4,14 @@ import math
 import json
 import uuid
 import requests
-import jpholiday
 from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
 
 STATE_FILE = "state.json"
+
+# 夜間積算雨量（17時〜翌8時）の通知しきい値（mm）
+NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
 # Google Noto Emoji (SIL Open Font License / Apache 2.0: 完全商用フリー・クレジット不要・ダークモード対応)
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f327.png"  # 雨雲
@@ -17,21 +19,22 @@ ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/pn
 
 
 # ---------------------------------------------------------
-# 1. 稼働時間・休日の判定 (8:00〜19:00 / 平日のみ / お盆・年末年始除外)
+# 1. 稼働時間・休日の判定 (8:00〜19:00 / 日曜・正月三が日のみ除外)
 # ---------------------------------------------------------
 def is_operating_time():
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
     
+    # 8:00〜19:00 以外の時間帯は除外
     if not (8 <= now.hour < 19):
         return False
-    if now.weekday() >= 5:
+        
+    # 日曜日 (weekday: 0=月, 1=火, ... 6=日)
+    if now.weekday() == 6:
         return False
-    if jpholiday.is_holiday(now.date()):
-        return False
-    if now.month == 8 and 11 <= now.day <= 16:
-        return False
-    if (now.month == 12 and now.day >= 29) or (now.month == 1 and now.day <= 3):
+        
+    # 1月1日〜1月3日 (正月三が日)
+    if now.month == 1 and 1 <= now.day <= 3:
         return False
         
     return True
@@ -40,13 +43,14 @@ def is_operating_time():
 # ---------------------------------------------------------
 # 2. 状態（state.json）の読み込み・保存・初期化
 # ---------------------------------------------------------
-def save_state(rain_val, current_rank, last_notified_rank, last_notified_type):
+def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
     jst = timezone(timedelta(hours=9))
     data = {
         "last_rain_val": rain_val,
         "last_rank": current_rank,
         "last_notified_rank": last_notified_rank,
-        "last_notified_type": last_notified_type,  # "RAINY", "WEAK", "NONE"
+        "last_notified_type": last_notified_type,
+        "last_evening_alert_date": last_evening_alert_date,
         "last_updated": datetime.now(jst).isoformat()
     }
     with open(STATE_FILE, "w") as f:
@@ -54,7 +58,7 @@ def save_state(rain_val, current_rank, last_notified_rank, last_notified_type):
 
 def init_state_file():
     if not os.path.exists(STATE_FILE):
-        save_state(0.0, 0, 0, "NONE")
+        save_state(0.0, 0, 0, "NONE", "")
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -62,27 +66,29 @@ def load_state():
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
                 last_time_str = data.get("last_updated", "")
+                last_evening_alert_date = data.get("last_evening_alert_date", "")
+                
                 if last_time_str:
                     last_time = datetime.fromisoformat(last_time_str)
                     jst = timezone(timedelta(hours=9))
-                    # 1時間以上経過している場合は状態リセット
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
-                        return 0.0, 0, 0, "NONE", True
+                        return 0.0, 0, 0, "NONE", last_evening_alert_date, True
                 
                 return (
                     float(data.get("last_rain_val", 0.0)),
                     int(data.get("last_rank", 0)),
                     int(data.get("last_notified_rank", 0)),
                     data.get("last_notified_type", "NONE"),
+                    last_evening_alert_date,
                     False
                 )
         except Exception:
-            return 0.0, 0, 0, "NONE", True
-    return 0.0, 0, 0, "NONE", True
+            return 0.0, 0, 0, "NONE", "", True
+    return 0.0, 0, 0, "NONE", "", True
 
 
 # ---------------------------------------------------------
-# 3. 座標計算と画像解析
+# 3. 座標計算・画像解析・予測積算雨量算出
 # ---------------------------------------------------------
 def latlon_to_tile(lat, lon, zoom=10):
     lat_rad = math.radians(lat)
@@ -105,20 +111,46 @@ def rgb_to_rainfall(rgb):
     if (r, g, b) == (200, 230, 255): return "わずかな降水", 0.5, "#90a4ae", 0
     return "降水なし", 0.0, "#78909c", 0
 
+def get_future_cumulative_rain(lat, lon, zoom=10):
+    """気象庁降水短時間予報から今後3時間および15時間の積算雨量(mm)を算出"""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
+        res = requests.get(url_target, headers=headers, timeout=10)
+        if res.status_code != 200:
+            return 0.0, 0.0
+        
+        target_times = res.json()
+        xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
+        
+        hourly_rain_list = []
+        for target in target_times[:15]:
+            basetime = target["basetime"]
+            validtime = target["validtime"]
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+            
+            t_res = requests.get(tile_url, headers=headers, timeout=5)
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel_color = img.getpixel((px, py))
+                _, rain_val, _, _ = rgb_to_rainfall(pixel_color)
+                hourly_rain_list.append(rain_val)
+            else:
+                hourly_rain_list.append(0.0)
+        
+        cum_3h = sum(hourly_rain_list[:3])
+        cum_15h = sum(hourly_rain_list[:15])
+        return round(cum_3h, 1), round(cum_15h, 1)
+    except Exception as e:
+        print(f"⚠️ 予測積算データ取得エラー: {e}")
+        return 0.0, 0.0
+
 
 # ---------------------------------------------------------
 # 4. Google Chat カード送信処理（CardsV2）
 # ---------------------------------------------------------
-def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val, color_code, icon_url):
+def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url):
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
-    
-    if rain_val > 0.0:
-        val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-        display_msg = f"<b>{msg_text}</b> {val_str} mm/h"
-    else:
-        display_msg = f"<b>{msg_text}</b>"
-    
-    formatted_text = f"<font color=\"{color_code}\">{display_msg}</font>"
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
     card_payload = {
@@ -163,40 +195,13 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, msg_text, rain_val,
     
     try:
         res = requests.post(webhook_url, json=card_payload, timeout=10)
-        print(f"📡 送信ステータス: {res.status_code} ({title_text}: {msg_text})")
+        print(f"📡 送信ステータス: {res.status_code} ({title_text})")
     except Exception as e:
         print(f"❌ 送信エラー: {e}")
 
 
 # ---------------------------------------------------------
-# 5. 全カラー＆パターン出力テスト関数
-# ---------------------------------------------------------
-def test_all_colors():
-    init_state_file()
-    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    lat = float(os.environ.get("TARGET_LAT", "35.681236"))
-    lon = float(os.environ.get("TARGET_LON", "139.767125"))
-
-    test_patterns = [
-        ("アメデス", "猛烈な雨", 80.0, "#ab47bc", ICON_RAINY),
-        ("アメデス", "非常に激しい雨", 50.0, "#e53935", ICON_RAINY),
-        ("アメデス", "激しい雨", 30.0, "#f57c00", ICON_RAINY),
-        ("アメデス", "強い雨", 20.0, "#f5a623", ICON_RAINY),
-        ("アメデス", "やや強い雨", 10.0, "#1e88e5", ICON_RAINY),
-        ("アメデス", "雨", 5.0, "#29b6f6", ICON_RAINY),
-        ("雨が弱くなります", "弱雨", 1.0, "#4dd0e1", ICON_RAINBOW),
-        ("雨が弱くなります", "わずかな降水", 0.5, "#90a4ae", ICON_RAINBOW),
-        ("雨が弱くなります", "降水なし", 0.0, "#78909c", ICON_RAINBOW),
-    ]
-
-    print("🧪 全9パターンの表示テストメッセージを送信中...")
-    for title, msg, val, color, icon in test_patterns:
-        send_google_chat_card(webhook_url, lat, lon, title, msg, val, color, icon)
-    print("✅ テスト送信完了。Google Chatをご確認ください。")
-
-
-# ---------------------------------------------------------
-# 6. メイン処理
+# 5. メイン処理（本番用）
 # ---------------------------------------------------------
 def main():
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
@@ -214,12 +219,13 @@ def main():
     if not is_operating_time():
         print("ℹ️ 稼働時間外のため処理をスキップします。")
         if load_state()[0] > 0:
-            save_state(0.0, 0, 0, "NONE")
+            save_state(0.0, 0, 0, "NONE", load_state()[4])
         sys.exit(0)
 
-    last_rain_val, last_rank, last_notified_rank, last_notified_type, is_fresh_start = load_state()
+    last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start = load_state()
     headers = {"User-Agent": "Mozilla/5.0"}
 
+    # 10分後ナウキャストデータ取得
     try:
         elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
         target_times = elem_res.json()
@@ -244,45 +250,103 @@ def main():
     except Exception:
         sys.exit(1)
 
+    jst = timezone(timedelta(hours=9))
+    now = datetime.now(jst)
+    today_str = now.strftime("%Y-%m-%d")
+
     print(f"📊 現在: {rain_desc}(ランク{current_rank}) | 前回通知: {last_notified_type}(ランク{last_notified_rank}) | 朝一:{is_fresh_start}")
 
-    # --- スマート通知判定ロジック ---
-    
-    # 朝一（稼働開始直後）にすでに雨が降っている場合は通知スキップして初期同期
+    sent_amedes_in_this_run = False
+
+    # --- 1. 通常通知判定ロジック ---
     if is_fresh_start and current_rank >= 1:
         print("ℹ️ 稼働開始時点で既に雨が降っているため、朝一の通知をスキップします。")
-        save_state(rain_val, current_rank, current_rank, "RAINY")
+        save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
 
-    # ① 「アメデス」通知を送る条件:
-    # 5.0mm/h以上の本降りで、かつ（直前通知が「弱くなります/なし」だった、または「過去に通知した雨の最大ランク」を上回った時）
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        send_google_chat_card(
-            webhook_url, lat, lon,
-            title_text="アメデス",
-            msg_text=rain_desc,
-            rain_val=rain_val,
-            color_code=color_code,
-            icon_url=ICON_RAINY
-        )
-        save_state(rain_val, current_rank, current_rank, "RAINY")
+        cum_3h, cum_15h = get_future_cumulative_rain(lat, lon, zoom)
         
-    # ② 「雨が弱くなります」通知を送る条件:
-    # 直前の通知が「アメデス」であり、かつ雨量が完全に5.0mm/h未満（ランク0）まで落ちた時だけ1回送信
+        val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+        cum_3h_str = str(cum_3h) if cum_3h < 1.0 else str(int(cum_3h))
+        cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
+        
+        formatted_text = (
+            f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+            f"<font color=\"#757575\">3時間予測積算 {cum_3h_str} mm ｜ 15時間予測積算 {cum_15h_str} mm</font>"
+        )
+        
+        send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY)
+        save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
+        sent_amedes_in_this_run = True
+
     elif current_rank == 0 and last_notified_type == "RAINY":
-        send_google_chat_card(
-            webhook_url, lat, lon,
-            title_text="雨が弱くなります",
-            msg_text=rain_desc,
-            rain_val=rain_val,
-            color_code=color_code,
-            icon_url=ICON_RAINBOW
-        )
-        save_state(0.0, 0, 0, "WEAK")
-        
-    # ③ それ以外（本降りの範囲内での軽微な強弱変化など）は通知を出さずにサイレント更新
+        formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+        send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", formatted_text, ICON_RAINBOW)
+        save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
+
     else:
-        save_state(rain_val, current_rank, last_notified_rank, last_notified_type)
+        save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date)
 
 
+    # --- 2. 終業時（17時前後）の夜間積算アラート判定 ---
+    if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
+        _, cum_15h = get_future_cumulative_rain(lat, lon, zoom)
+        
+        if cum_15h >= NIGHT_RAIN_THRESHOLD:
+            cum_15h_str = str(cum_15h) if cum_15h < 1.0 else str(int(cum_15h))
+            formatted_text = (
+                f"<b><font color=\"#f5a623\">夜間の降水予測</font></b><br>"
+                f"17時〜翌8時の予測積算雨量 <b>{cum_15h_str} mm</b><br>"
+                f"<font color=\"#757575\">退社前に排水ポンプの設定をご確認ください。</font>"
+            )
+            send_google_chat_card(webhook_url, lat, lon, "終業時排水準備", formatted_text, ICON_RAINY)
+            save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
+
+
+# ---------------------------------------------------------
+# 6. 全通知テスト実行用関数
+# ---------------------------------------------------------
+def test_all_notifications():
+    """本システムの全3パターンの通知カードを表示・動作確認するテスト関数"""
+    init_state_file()
+    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
+    lat = float(os.environ.get("TARGET_LAT", "35.681236"))
+    lon = float(os.environ.get("TARGET_LON", "139.767125"))
+
+    if not webhook_url:
+        print("❌ エラー: CHAT_WEBHOOK_URL が設定されていません。")
+        sys.exit(1)
+
+    print("🧪 全3パターンの通知表示テストメッセージを送信中...")
+
+    # テスト1: アメデス（積算雨量併記）
+    text_amedes = (
+        f"<font color=\"#f5a623\"><b>強い雨</b> 20 mm/h</font><br>"
+        f"<font color=\"#757575\">3時間予測積算 35 mm ｜ 15時間予測積算 68 mm</font>"
+    )
+    send_google_chat_card(webhook_url, lat, lon, "アメデス", text_amedes, ICON_RAINY)
+
+    # テスト2: 雨が弱くなります
+    text_weak = f"<font color=\"#78909c\"><b>降水なし</b></font>"
+    send_google_chat_card(webhook_url, lat, lon, "雨が弱くなります", text_weak, ICON_RAINBOW)
+
+    # テスト3: 終業時排水準備（17時アラート）
+    text_evening = (
+        f"<b><font color=\"#f5a623\">夜間の降水予測</font></b><br>"
+        f"17時〜翌8時の予測積算雨量 <b>32 mm</b><br>"
+        f"<font color=\"#757575\">退社前に排水ポンプの設定をご確認ください。</font>"
+    )
+    send_google_chat_card(webhook_url, lat, lon, "終業時排水準備", text_evening, ICON_RAINY)
+
+    print("✅ テスト送信が完了しました。Google Chatのメッセージをご確認ください。")
+
+
+# ---------------------------------------------------------
+# 7. スクリプト実行エントリーポイント
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    main()
+    # 【本番運用モード】（普段はこちらを有効化）
+    # main()
+
+    # 【テスト送信モード】（テスト時は上の main() の頭に # を付け、下の行の # を消してください）
+    test_all_notifications()
