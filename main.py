@@ -286,42 +286,38 @@ def parse_jma_time(time_str):
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
     """
-    気象庁N2タイルの混在データから正確に1時間間隔（15時間分）を抽出して雨量予測を取得します。
+    rasrf の targetTimes.json 生メタデータを直接使用し、
+    (basetime, member, validtime) の実在する属性ペアに基づいて直近15コマ（15時間相当）の雨量予測を取得します。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
+        url_target = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
         res = requests.get(url_target, headers=headers, timeout=10)
         if res.status_code != 200:
             return 0.0, 0.0, [0.0]*15, ""
         
-        target_times = res.json()
+        raw_data = res.json()
         xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
         
-        if not target_times:
+        if not raw_data:
             return 0.0, 0.0, [0.0]*15, ""
 
-        base_dt = parse_jma_time(target_times[0]["basetime"])
-        hourly_targets = []
-        target_hours = [base_dt + timedelta(hours=i) for i in range(1, 16)]
-        
-        for th in target_hours:
-            best_match = None
-            min_diff = float("inf")
-            for t in target_times:
-                v_dt = parse_jma_time(t["validtime"])
-                diff = abs((v_dt - th).total_seconds())
-                if diff < min_diff:
-                    min_diff = diff
-                    best_match = t
-            if best_match and min_diff < 1800:
-                hourly_targets.append(best_match)
+        # elements に 'rasrf' を含み、かつ過去解析以外（basetime != validtime）の未来予報コマを抽出
+        valid_frames = [
+            item for item in raw_data 
+            if "rasrf" in item.get("elements", []) and item.get("basetime") != item.get("validtime")
+        ]
+        valid_frames.sort(key=lambda x: x["validtime"])
+
+        # 直近15コマ（15時間相当）を確定ターゲットとする
+        target_frames = valid_frames[:15]
 
         hourly_rain_list = []
-        for target in hourly_targets:
-            basetime = target["basetime"]
-            validtime = target["validtime"]
-            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+        for item in target_frames:
+            basetime = item["basetime"]
+            validtime = item["validtime"]
+            member = item.get("member", "none")
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{basetime}/{member}/{validtime}/surf/rasrf/{zoom}/{xtile}/{ytile}.png"
             
             t_res = requests.get(tile_url, headers=headers, timeout=5)
             if t_res.status_code == 200:
@@ -332,6 +328,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
             else:
                 hourly_rain_list.append(0.0)
         
+        # 配列長が15未満の場合は0.0でパディング
         while len(hourly_rain_list) < 15:
             hourly_rain_list.append(0.0)
             
@@ -475,134 +472,74 @@ def main():
     print("Execution completed successfully.")
 
 # =========================================================
-# 6. 安全な実データAPI取得テスト関数（デバッグ結果をChatへ送信）
+# 6. 強制データ取得＆Google Chatカード送信テスト関数
 # =========================================================
-import math
-import os
-import requests
-from io import BytesIO
-from PIL import Image
-from datetime import datetime, timezone, timedelta
-
-# 気象庁RGBカラーパレット（全24パターン統合定義）
-JMA_COMPLETE_PALETTE = [
-    ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
-    ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
-    ((33,  140, 255), 5.0, "雨"), ((65,  140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
-    ((0,   65,  255), 10.0, "やや強い雨"), ((0,   0,   255), 10.0, "やや強い雨"), ((90,  120, 240), 10.0, "やや強い雨"),
-    ((250, 245, 0),   20.0, "強い雨"), ((255, 255, 0),   20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
-    ((255, 153, 0),   30.0, "激しい雨"), ((255, 165, 0),   30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
-    ((255, 40,  0),   50.0, "非常に激しい雨"), ((255, 0,   0),   50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
-    ((180, 0,   104), 80.0, "猛烈な雨"), ((210, 0,   170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
-]
-
-def local_parse_time(time_str):
-    return datetime.strptime(time_str, "%Y%m%d%H%M%S")
-
-def local_rgb_to_rainfall(pixel):
-    if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255):
-        return "降水なし", 0.0
-    r, g, b = pixel[:3]
-    min_dist = float("inf")
-    best = ("降水なし", 0.0)
-    for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
-        dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-        if dist < min_dist:
-            min_dist = dist
-            best = (desc, val)
-    return best
-
-def test_real_api_fetch():
+def test_forced_notification():
     """
-    targetTimes.json のうち 'rasrf' を含むエントリのみを抽出し、
-    JSON内に記載された basetime / member / validtime / element を
-    改変・推測せずそのまま使用して画像タイルを取得します。
+    稼働時間・休日・雨量閾値などのガード条件をすべてバイパスし、
+    気象庁APIから現在の実況と今後15時間の予測をリアルタイム取得して、
+    QuickChartグラフ付きのカードメッセージを強制的に Google Chat へ送信します。
     """
-    import math
-    import os
-    import requests
-    from io import BytesIO
-    from PIL import Image
-
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
+
     if not webhook_url or not lat_str or not lon_str:
-        print("Execution finished (Missing env vars).")
+        print("エラー: 必須の環境変数が設定されていません (CHAT_WEBHOOK_URL, TARGET_LAT, TARGET_LON)。")
         return
 
-    lat, lon = float(lat_str), float(lon_str)
+    lat = float(lat_str)
+    lon = float(lon_str)
+    zoom = 10
     headers = {"User-Agent": "Mozilla/5.0"}
-    logs = ["<b>📊 rasrf メタデータ完全準拠 疎通結果</b><br>"]
 
-    JMA_COMPLETE_PALETTE = [
-        ((242, 242, 255), 0.5, "わずかな降水"), ((235, 245, 255), 0.5, "わずかな降水"), ((200, 225, 255), 0.5, "わずかな降水"),
-        ((160, 210, 255), 1.0, "弱雨"), ((128, 192, 255), 1.0, "弱雨"), ((175, 210, 240), 1.0, "弱雨"),
-        ((33,  140, 255), 5.0, "雨"), ((65,  140, 255), 5.0, "雨"), ((110, 160, 240), 5.0, "雨"),
-        ((0,   65,  255), 10.0, "やや強い雨"), ((0,   0,   255), 10.0, "やや強い雨"), ((90,  120, 240), 10.0, "やや強い雨"),
-        ((250, 245, 0),   20.0, "強い雨"), ((255, 255, 0),   20.0, "強い雨"), ((245, 240, 110), 20.0, "強い雨"),
-        ((255, 153, 0),   30.0, "激しい雨"), ((255, 165, 0),   30.0, "激しい雨"), ((250, 185, 100), 30.0, "激しい雨"),
-        ((255, 40,  0),   50.0, "非常に激しい雨"), ((255, 0,   0),   50.0, "非常に激しい雨"), ((240, 130, 110), 50.0, "非常に激しい雨"),
-        ((180, 0,   104), 80.0, "猛烈な雨"), ((210, 0,   170), 80.0, "猛烈な雨"), ((200, 120, 160), 80.0, "猛烈な雨"),
-    ]
+    print("=== [テスト実行] 気象庁APIデータ強制取得＆Chat送信 ===")
 
-    def local_rgb_to_rainfall(pixel):
-        if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0) or pixel[:3] == (255, 255, 255):
-            return "降水なし", 0.0
-        r, g, b = pixel[:3]
-        min_dist = float("inf")
-        best = ("降水なし", 0.0)
-        for (pr, pg, pb), val, desc in JMA_COMPLETE_PALETTE:
-            dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
-            if dist < min_dist:
-                min_dist = dist
-                best = (desc, val)
-        return best
-
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-
+    # 1. 現在の実況データ（nowc）を実際に取得
+    rain_desc, rain_val, color_code, current_rank = "降水なし", 0.0, "#78909c", 0
     try:
-        url = "https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json"
-        res = requests.get(url, headers=headers, timeout=5)
-        
-        if res.status_code == 200:
-            raw_data = res.json()
-            
-            # elements に 'rasrf' が含まれる有効な予報フレームのみを抽出（時刻順ソート）
-            rasrf_items = [
-                item for item in raw_data 
-                if "rasrf" in item.get("elements", [])
-            ]
-            rasrf_items.sort(key=lambda x: x["validtime"])
-
-            logs.append(f"<b>検出された有効予報コマ数</b>: {len(rasrf_items)} 件<br>")
-
-            # JSON内の定義（b_time, member, v_time）をそのまま使ってリクエスト
-            for idx, item in enumerate(rasrf_items, start=1):
-                b_time = item["basetime"]
-                v_time = item["validtime"]
-                member = item.get("member", "none")
-                
-                tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/rasrf/{b_time}/{member}/{v_time}/surf/rasrf/10/{xtile}/{ytile}.png"
-                t_res = requests.get(tile_url, headers=headers, timeout=5)
-
-                if t_res.status_code == 200:
-                    img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                    pixel = img.getpixel((px, py))
-                    desc, val = local_rgb_to_rainfall(pixel)
-                    logs.append(f"[{idx:02d}] <b>Valid:{v_time}</b> (Base:{b_time} | Member:{member}): HTTP 200 | <b>{desc} ({val}mm/h)</b>")
-                else:
-                    logs.append(f"[{idx:02d}] <b>Valid:{v_time}</b> (Base:{b_time} | Member:{member}): <font color=\"red\">HTTP {t_res.status_code}</font>")
-
-        else:
-            logs.append(f"❌ JSON取得失敗: HTTP {res.status_code}")
-
+        elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
+        if elem_res.status_code == 200:
+            target_times = elem_res.json()
+            if len(target_times) >= 3:
+                target = target_times[2]
+                basetime, validtime = target["basetime"], target["validtime"]
+                xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
+                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    img = Image.open(BytesIO(res.content)).convert("RGBA")
+                    pixel_color = img.getpixel((px, py))
+                    rain_desc, rain_val, color_code, current_rank = rgb_to_rainfall(pixel_color)
     except Exception as e:
-        logs.append(f"❌ 実行エラー: {e}")
+        print(f"nowc取得失敗: {e} (デフォルト値 0.0mm/h で処理を続行します)")
 
-    debug_text = "<br>".join(logs)
-    send_google_chat_card(webhook_url, lat, lon, "🔬 データ構造準拠テスト結果", debug_text, ICON_RAINY)
-    print("Execution completed successfully.")
+    # 2. 今後15時間の予測データ（rasrf）およびグラフURLを取得
+    cum_3h, cum_15h, hourly_rain_list, chart_url = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+
+    # 3. カード本文メッセージの構築
+    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+    cum_15h_int = int(cum_15h)
+
+    formatted_text = (
+        f"<b>【強制テスト配信】</b><br>"
+        f"<b>現在地の状況</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+        f"<b>今後15時間積算雨量</b>: {cum_15h_int} mm<br>"
+        f"<b>3時間積算雨量</b>: {cum_3h} mm"
+    )
+
+    # 4. Google Chat カードの強制送信
+    send_google_chat_card(
+        webhook_url=webhook_url,
+        lat=lat,
+        lon=lon,
+        title_text="🧪 動作テスト (アメデス強制作動)",
+        formatted_text=formatted_text,
+        icon_url=ICON_RAINY,
+        chart_url=chart_url
+    )
+
+    print("実行完了: Google Chat へカードメッセージを送信しました。")
 
 # =========================================================
 # 7. スクリプト実行エントリーポイント
@@ -616,5 +553,5 @@ if __name__ == "__main__":
     # 【本番運用モード】（時間・曜日ガードあり）
     # main()
     
-    # 【テスト検証モード】（デバッグ結果をGoogle Chatへ直接送信）
-    test_real_api_fetch()
+    # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信）
+    test_forced_notification()
