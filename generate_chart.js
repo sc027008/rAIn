@@ -82,9 +82,9 @@ const totalFrames = 20; // 15 から 20 フレームへ変更 (全体のアニ�
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 1〜19フレーム目は 100ms (ややゆったり)、最後の20フレーム目（完成形）は 30,000ms（30秒間）表示
+  // 1〜19フレーム目は 100ms (ややゆったり)、最後の20フレーム目（完成形）は 20,000ms（20秒間）表示
   if (i === totalFrames) {
-    encoder.setDelay(30000);
+    encoder.setDelay(20000);
   } else {
     encoder.setDelay(100); // 80ms から 100ms へ変更
   }
@@ -116,7 +116,7 @@ const globalProgress = i / totalFrames;
   const datalabelDisplay = (context) => {
     const targetVal = hourlyRain[context.dataIndex];
     const progress = localProgresses[context.dataIndex];
-    return targetVal > 0 && progress >= 0.8;
+    return targetVal > 0 && progress >= 0.5;
   };
 
   const chartConfig = {
