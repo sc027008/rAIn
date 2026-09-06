@@ -15,27 +15,31 @@ from io import BytesIO
 # =========================================================
 STATE_FILE = "state.json"
 
+# 気象庁タイルのズームレベル（全国共通 zoom=10）
+ZOOM_LEVEL = 10
+
 # 夜間積算雨量（17時〜翌8時）の通知判定しきい値（mm）
 NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
 
-# Google Noto Emoji アイコンURL
+# Google Noto Emoji アイコンURL（カードヘッダー用）
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
 ICON_RAINBOW = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f308.png"
 ICON_NIGHT_RAIN = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f303.png"
 
-# 気象庁雨雲タイルの全3種24パターンカラーパレット統合定義（中央値補正版）
+# 気象庁雨雲タイルの全3種24パターンカラーパレット統合定義（各降水階級の中央値補正版）
+# フォーマット: ((R, G, B), 降水量mm/h, 降水状態の日本語表示)
 JMA_24_PALETTE = [
-    # パレット1 (標準)
+    # パレット1 (標準スタイル)
     ((180, 0, 104), 80.0, "猛烈な雨"), ((255, 40, 0), 65.0, "非常に激しい雨"),
     ((255, 153, 0), 40.0, "激しい雨"), ((255, 245, 0), 25.0, "強い雨"),
     ((0, 65, 255), 15.0, "やや強い雨"), ((33, 140, 255), 7.0, "雨"),
     ((160, 210, 255), 3.0, "弱雨"), ((242, 242, 255), 0.5, "わずかな降水"),
-    # パレット2 (中間)
+    # パレット2 (中間スタイル)
     ((199, 64, 142), 80.0, "猛烈な雨"), ((255, 94, 64), 65.0, "非常に激しい雨"),
     ((255, 179, 64), 40.0, "激しい雨"), ((255, 248, 64), 25.0, "強い雨"),
     ((64, 113, 255), 15.0, "やや強い雨"), ((89, 169, 255), 7.0, "雨"),
     ((184, 222, 255), 3.0, "弱雨"), ((246, 246, 255), 0.5, "わずかな降水"),
-    # パレット3 (パステル)
+    # パレット3 (パステルスタイル)
     ((217, 127, 179), 80.0, "猛烈な雨"), ((255, 147, 127), 65.0, "非常に激しい雨"),
     ((255, 204, 127), 40.0, "激しい雨"), ((255, 250, 127), 25.0, "強い雨"),
     ((127, 160, 255), 15.0, "やや強い雨"), ((144, 197, 255), 7.0, "雨"),
@@ -47,7 +51,11 @@ JMA_24_PALETTE = [
 # =========================================================
 def is_operating_time():
     """
-    現在の日本時間が通知稼働時間内（8時〜18時59分、日曜除く、正月三箇日除く）か判定します。
+    現在の日本時間が通知稼働時間内か判定します。
+    【稼働条件】
+    - 時間: 8:00 〜 18:59 JST
+    - 曜日: 月〜土曜日（日曜日[weekday=6]は除外）
+    - 祝日特例: 正月三箇日（1月1日〜3日）は除外
     """
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -65,6 +73,7 @@ def is_operating_time():
 # 2. 状態（state.json）の読み込み・保存・初期化
 # =========================================================
 def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
+    """実行状態（前回通知した雨量ランク・通知タイプ・日付など）をstate.jsonへ永続化保存します。"""
     jst = timezone(timedelta(hours=9))
     data = {
         "last_rain_val": rain_val,
@@ -78,10 +87,17 @@ def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, l
         json.dump(data, f)
 
 def init_state_file():
+    """state.jsonが存在しない場合に初期ファイルを作成します。"""
     if not os.path.exists(STATE_FILE):
         save_state(0.0, 0, 0, "NONE", "")
 
 def load_state():
+    """
+    state.json から前回の状態を取得します。
+    【戻り値】
+    (last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start)
+    ※最終更新から1時間以上経過している場合は強制リセットフラグ(is_fresh_start=True)を返します。
+    """
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
@@ -92,6 +108,7 @@ def load_state():
                 if last_time_str:
                     last_time = datetime.fromisoformat(last_time_str)
                     jst = timezone(timedelta(hours=9))
+                    # 1時間以上実行が空いた場合はリセット処理
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
                         return 0.0, 0, 0, "NONE", last_evening_alert_date, True
                 
@@ -110,7 +127,11 @@ def load_state():
 # =========================================================
 # 3. 座標計算・画像解析・予測データ算出＆グラフURL生成
 # =========================================================
-def latlon_to_tile(lat, lon, zoom=10):
+def latlon_to_tile(lat, lon, zoom=ZOOM_LEVEL):
+    """
+    緯度経度(WGS84)を気象庁Webメルカトルタイルの座標(X, Y)およびタイル内ピクセル位置(px, py)へ変換します。
+    zoom: タイルのズームレベル（デフォルト ZOOM_LEVEL = 10）
+    """
     lat_rad = math.radians(lat)
     n = 2 ** zoom
     xtile = int((lon + 180.0) / 360.0 * n)
@@ -121,8 +142,8 @@ def latlon_to_tile(lat, lon, zoom=10):
 
 def rgb_to_rainfall(pixel):
     """
-    気象庁雨雲タイルのピクセル色から雨量(mm/h)と降雨ランクを判定します。
-    透明ピクセルおよび白背景を除外し、全24パターンのパレットから最も近い色を探索します。
+    ピクセルのRGBA値から気象庁24パレットと照合し、降雨強度(mm/h)・状態表記・カラーコード・雨量ランク(0-6)を返します。
+    ※アルファ値=0（透明）および (255,255,255)（白背景）は優先的に「降水なし」と判定します。
     """
     if not pixel or len(pixel) < 3 or (len(pixel) >= 4 and pixel[3] == 0):
         return "降水なし", 0.0, "#78909c", 0
@@ -134,38 +155,43 @@ def rgb_to_rainfall(pixel):
     min_dist = float("inf")
     best_desc, best_val = "降水なし", 0.0
 
+    # 24パターンパレットとの3次元色空間距離（ユークリッド距離）を計算
     for (pr, pg, pb), val, desc in JMA_24_PALETTE:
         dist = math.sqrt((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
         if dist < min_dist:
             min_dist = dist
             best_desc, best_val = desc, val
 
+    # 許容色誤差（距離45超）を超える場合は背景色等とみなして非降水扱い
     if min_dist > 45.0:
         return "降水なし", 0.0, "#78909c", 0
 
+    # 降水量に応じた表示色と通知ランク(0〜6)のマッピング
     if best_val >= 80.0: return best_desc, best_val, "#ab47bc", 6
     if best_val >= 65.0: return best_desc, best_val, "#e53935", 5
     if best_val >= 40.0: return best_desc, best_val, "#f57c00", 4
     if best_val >= 25.0: return best_desc, best_val, "#f5a623", 3
     if best_val >= 15.0: return best_desc, best_val, "#1e88e5", 2
-    if best_val >= 7.5:  return best_desc, best_val, "#29b6f6", 1
+    if best_val >= 7.0:  return best_desc, best_val, "#29b6f6", 1
     if best_val >= 3.0:  return best_desc, best_val, "#4dd0e1", 0
     if best_val >= 0.5:  return best_desc, best_val, "#90a4ae", 0
 
     return "降水なし", 0.0, "#78909c", 0
 
 def get_color_for_value(val):
+    """グラフの棒グラフ表示用カラーコードを取得します。"""
     if val >= 80.0: return "#ab47bc"
     if val >= 65.0: return "#e53935"
     if val >= 40.0: return "#f57c00"
     if val >= 25.0: return "#f5a623"
     if val >= 15.0: return "#1e88e5"
-    if val >= 7.5:  return "#29b6f6"
+    if val >= 7.0:  return "#29b6f6"
     if val >= 3.0:  return "#4dd0e1"
     if val > 0.0:   return "#90a4ae"
     return "#e0e0e0"
 
 def get_nice_step(raw_max, steps=5):
+    """グラフY軸の目盛り間隔（stepSize）をキリの良い数値に調整します。"""
     raw_step = raw_max / steps
     nice_steps = [1, 2, 5, 10, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
     for n in nice_steps:
@@ -174,6 +200,10 @@ def get_nice_step(raw_max, steps=5):
     return math.ceil(raw_step)
 
 def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
+    """
+    QuickChart API を利用して、現在〜15時間後までの時間雨量（棒グラフ）と
+    積算雨量（折れ線グラフ）を組み合わせた複合グラフ画像URLを動的生成します。
+    """
     all_rain = [current_rain_val] + hourly_rain_list
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
@@ -195,7 +225,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + "　" * 3 + "折れ線グラフ: 積算雨量 [mm]↓"
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 8 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
@@ -318,12 +348,63 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 # 4. データ取得・カード構築・送信処理
 # =========================================================
 def parse_jma_time(time_str):
+    """気象庁の日時文字列(YYYYMMDDHHMMSS)を datetime オブジェクトに変換します。"""
     return datetime.strptime(time_str, "%Y%m%d%H%M%S")
 
-def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
+def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
     """
-    1コマごとに HTTP ステータスコード（200, 404, 500等）を個別保持し、
-    正常取得(200)とエラー（通信障害・不整合）の原因を明確に分離します。
+    nowc (ナウキャスト) APIから「10分後」の雨量予測データを取得します。
+    【10分後ロジックの補足】
+    targetTimes_N1.json 内の validtime から、basetime（観測時刻）+ 10分後となるコマを抽出し、
+    雨雲が直近接近してくるかどうかの早め対策判断に使用します。
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
+        res = requests.get(url_target, headers=headers, timeout=10)
+        if res.status_code != 200:
+            return "降水なし", 0.0, "#78909c", 0, None, None
+
+        target_times = res.json()
+        if not target_times:
+            return "降水なし", 0.0, "#78909c", 0, None, None
+
+        # 観測基準時刻（basetime）の取得
+        base_dt = parse_jma_time(target_times[0]["basetime"])
+        target_10min_dt = base_dt + timedelta(minutes=10)
+
+        # validtime が basetime + 10分 に最も近い予報コマを特定
+        best_match = None
+        min_diff = float("inf")
+        for t in target_times:
+            v_dt = parse_jma_time(t["validtime"])
+            diff = abs((v_dt - target_10min_dt).total_seconds())
+            if diff < min_diff:
+                min_diff = diff
+                best_match = t
+
+        if best_match and min_diff <= 300: # 5分誤差以内のコマを正とみなす
+            basetime = best_match["basetime"]
+            validtime = best_match["validtime"]
+            xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
+            
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+            t_res = requests.get(tile_url, headers=headers, timeout=10)
+            if t_res.status_code == 200:
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                pixel_color = img.getpixel((px, py))
+                rain_desc, rain_val, color_code, rank = rgb_to_rainfall(pixel_color)
+                return rain_desc, rain_val, color_code, rank, basetime, validtime
+
+    except Exception as e:
+        print(f"10分後ナウキャスト取得エラー: {e}")
+
+    return "降水なし", 0.0, "#78909c", 0, None, None
+
+def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=ZOOM_LEVEL):
+    """
+    気象庁 rasrf (長期的予測 API) の targetTimes.json メタデータを解析し、
+    指定座標の今後15時間分の毎時予測雨量、3時間/15時間積算雨量、グラフURL、取得詳細ログを返します。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     details = []
@@ -357,6 +438,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
                 })
             return 0.0, 0.0, [0.0]*15, "", details
 
+        # 過去解析データ(basetime == validtime)を除外し、未来の予測コマ(rasrf)のみ抽出
         valid_frames = [
             item for item in raw_data 
             if "rasrf" in item.get("elements", []) and item.get("basetime") != item.get("validtime")
@@ -366,6 +448,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
         target_frames = valid_frames[:15]
         hourly_rain_list = []
 
+        # 各1時間予報タイルのピクセル色を取得・解析
         for idx, item in enumerate(target_frames, start=1):
             basetime = item["basetime"]
             validtime = item["validtime"]
@@ -405,6 +488,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
                     "status_desc": f"通信例外 ({type(req_err).__name__})"
                 })
 
+        # 不足分を0.0でパディング
         while len(hourly_rain_list) < 15:
             idx = len(hourly_rain_list) + 1
             hourly_rain_list.append(0.0)
@@ -434,6 +518,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=10):
         return 0.0, 0.0, [0.0]*15, "", details
 
 def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
+    """Google Chat Webhook API を利用して、カード形式（CardsV2）の通知メッセージを送信します。"""
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
@@ -477,6 +562,13 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
 # 5. メインロジック（本番定期実行用）
 # =========================================================
 def main():
+    """
+    本番運用時のエントリーポイント関数。
+    1. 環境変数チェックおよび動作可能時間判定（営業時間・祝日ガード）
+    2. 現在地の10分後予測雨量(nowc)を取得（早め対策ロジック）
+    3. 状態管理(state.json)のランク変化に基づき Google Chat 通知を判定・送信
+    4. 17時台の夜間雨量アサート条件を満たした場合の特別通知
+    """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
     lon_str = os.environ.get("TARGET_LON")
@@ -489,42 +581,16 @@ def main():
 
     init_state_file()
 
+    # 稼働時間外判定（時間外の場合は前回雨量をリセットして正常終了）
     if not is_operating_time():
         if load_state()[0] > 0:
             save_state(0.0, 0, 0, "NONE", load_state()[4])
         sys.exit(0)
 
     last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start = load_state()
-    headers = {"User-Agent": "Mozilla/5.0"}
 
-    try:
-        elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
-        target_times = elem_res.json()
-        
-        # basetime == validtime の実況フレーム（現在値）を正確に抽出
-        target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), target_times[0] if target_times else None)
-        if not target:
-            sys.exit(1)
-            
-        basetime = target["basetime"]
-        validtime = target["validtime"]
-    except Exception:
-        sys.exit(1)
-
-    zoom = 10
-    xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
-    url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
-
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code != 200:
-            rain_desc, rain_val, color_code, current_rank = "降水なし", 0.0, "#78909c", 0
-        else:
-            img = Image.open(BytesIO(res.content)).convert("RGBA")
-            pixel_color = img.getpixel((px, py))
-            rain_desc, rain_val, color_code, current_rank = rgb_to_rainfall(pixel_color)
-    except Exception:
-        sys.exit(1)
+    # 10分後の雨量予測データ（nowc）を取得（0hの判定データ）
+    rain_desc, rain_val, color_code, current_rank, _, _ = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
 
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -532,11 +598,13 @@ def main():
 
     sent_amedes_in_this_run = False
 
+    # 条件1: スクリプト起動初回で雨が降っている場合
     if is_fresh_start and current_rank >= 1:
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
 
+    # 条件2: 降り始めまたは雨量ランクが上昇した場合の「アメデス」通知
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         cum_15h_int = int(cum_15h)
         
@@ -549,17 +617,19 @@ def main():
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
         sent_amedes_in_this_run = True
 
+    # 条件3: 雨が止んだ場合の「雨上がりの予感」通知
     elif current_rank == 0 and last_notified_type == "RAINY":
-        _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
         send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
         save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
 
     else:
-        save_state(rain_val, current_rain_val, last_notified_rank, last_notified_type, last_evening_alert_date)
+        save_state(rain_val, rain_val, last_notified_rank, last_notified_type, last_evening_alert_date)
 
+    # 条件4: 夕方（17時0分〜10分）の「今宵アメデス」積算雨量警告通知
     if now.hour == 17 and (0 <= now.minute <= 10) and not sent_amedes_in_this_run and last_evening_alert_date != today_str:
-        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, zoom)
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_int = int(cum_15h)
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
@@ -574,10 +644,8 @@ def main():
 def find_active_rain_location():
     """
     日本全国の主要候補地および雨雲タイルをランダムな順序で探索し、
-    現在雨が降っている（rain_val > 0.0）地点の (地名, lat, lon) を返します。
+    現在〜10分後に雨が降っている（rain_val > 0.0）地点の (地名, lat, lon) を返します。
     """
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
     candidate_spots = [
         ("札幌", 43.0618, 141.3545), ("函館", 41.7687, 140.7288), ("青森", 40.8244, 140.7400),
         ("秋田", 39.7186, 140.1024), ("仙台", 38.2682, 140.8694), ("新潟", 37.9161, 139.0364),
@@ -591,50 +659,10 @@ def find_active_rain_location():
     random.shuffle(candidate_spots)
 
     try:
-        url = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code != 200:
-            return None, None, None
-
-        target_times = res.json()
-        target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), None)
-        if not target:
-            return None, None, None
-
-        basetime, validtime = target["basetime"], target["validtime"]
-
         for name, lat, lon in candidate_spots:
-            xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
-            t_res = requests.get(tile_url, headers=headers, timeout=3)
-            
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                pixel = img.getpixel((px, py))
-                _, rain_val, _, _ = rgb_to_rainfall(pixel)
-                if rain_val > 0.0:
-                    return f"{name}周辺", lat, lon
-
-        scan_tiles = [(901, 404), (905, 402), (895, 410), (890, 415), (910, 395)]
-        random.shuffle(scan_tiles)
-
-        for xtile, ytile in scan_tiles:
-            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
-            t_res = requests.get(tile_url, headers=headers, timeout=3)
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                width, height = img.size
-                for py_idx in range(0, height, 16):
-                    for px_idx in range(0, width, 16):
-                        pixel = img.getpixel((px_idx, py_idx))
-                        _, rain_val, _, _ = rgb_to_rainfall(pixel)
-                        if rain_val > 0.0:
-                            n = 2.0 ** 10
-                            x = xtile + px_idx / 256.0
-                            y = ytile + py_idx / 256.0
-                            calc_lon = round((x / n) * 360.0 - 180.0, 4)
-                            calc_lat = round(math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * y / n)))), 4)
-                            return f"雨域検出地点({calc_lat}, {calc_lon})", calc_lat, calc_lon
+            _, rain_val, _, _, _, _ = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
+            if rain_val > 0.0:
+                return f"{name}周辺", lat, lon
 
     except Exception as e:
         print(f"降雨エリア探索エラー: {e}")
@@ -643,15 +671,15 @@ def find_active_rain_location():
 
 def test_forced_notification():
     """
-    雨が降っている地域を自動特定してデータ取得を行い、
-    該当地域の気象庁Web GUIリンクを添えてGoogle Chatへ送信します。
+    【デバッグ・検証用関数】
+    10分後予測データの検証ができるよう、観測時刻(Base)と予測時刻(Valid=+10分)を明示して
+    気象庁Web GUI照合用リンク付きのカードメッセージを Google Chat へ送信します。
     """
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     if not webhook_url:
         print("エラー: CHAT_WEBHOOK_URL が設定されていません。")
         return
 
-    headers = {"User-Agent": "Mozilla/5.0"}
     print("=== 全国雨域自動スキャン開始 ===")
 
     location_name, lat, lon = find_active_rain_location()
@@ -664,33 +692,22 @@ def test_forced_notification():
 
     print(f"検証対象地点決定: {location_name} (緯度:{lat}, 経度:{lon})")
 
-    rain_desc, rain_val, color_code = "降水なし", 0.0, "#78909c"
-    try:
-        elem_res = requests.get("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json", headers=headers, timeout=10)
-        if elem_res.status_code == 200:
-            target_times = elem_res.json()
-            # basetime == validtime の実況フレーム（現在値）を正確に抽出
-            target = next((t for t in target_times if t.get("basetime") == t.get("validtime")), None)
-            if target:
-                basetime, validtime = target["basetime"], target["validtime"]
-                xtile, ytile, px, py = latlon_to_tile(lat, lon, 10)
-                url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/10/{xtile}/{ytile}.png"
-                res = requests.get(url, headers=headers, timeout=10)
-                if res.status_code == 200:
-                    img = Image.open(BytesIO(res.content)).convert("RGBA")
-                    pixel_color = img.getpixel((px, py))
-                    rain_desc, rain_val, color_code, _ = rgb_to_rainfall(pixel_color)
-    except Exception as e:
-        print(f"実況取得例外: {e}")
+    # 10分後予測データの取得および検証メタデータの取得
+    rain_desc, rain_val, color_code, _, basetime, validtime = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
 
-    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, 10)
+    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
     jma_gui_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
 
     val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+    
+    # 10分後の検証時刻表示
+    v_time_str = f"{validtime[8:10]}:{validtime[10:12]}" if validtime else "10分後"
+    b_time_str = f"{basetime[8:10]}:{basetime[10:12]}" if basetime else "観測時"
+
     logs = [
-        f"<b>【実降雨エリアデバッグ検証】</b>",
+        f"<b>【10分後予測 検証デバッグ配信】</b>",
         f"<b>検証対象地域</b>: 📍 <b>{location_name}</b>",
-        f"<b>現在地の状況</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>",
+        f"<b>10分後予報 ({v_time_str} / Base:{b_time_str})</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>",
         f"<b>気象庁Web GUI確認リンク</b>: <a href=\"{jma_gui_url}\">雨雲の動き(公式GUI)で画面照合</a><br>",
         f"<b>【15時間予測値およびHTTPレスポンス詳細】</b>"
     ]
@@ -716,13 +733,13 @@ def test_forced_notification():
         webhook_url=webhook_url,
         lat=lat,
         lon=lon,
-        title_text=f"🌧️ 実降雨検証 ({location_name})",
+        title_text=f"🌧️ 10分後予測検証 ({location_name})",
         formatted_text=formatted_text,
         icon_url=ICON_RAINY,
         chart_url=chart_url
     )
 
-    print(f"送信完了: {location_name} (lat:{lat}, lon:{lon}) の実降雨データをGoogle Chatへ送信しました。")
+    print(f"送信完了: {location_name} (lat:{lat}, lon:{lon}) の10分後予測データをGoogle Chatへ送信しました。")
 
 # =========================================================
 # 7. スクリプト実行エントリーポイント
