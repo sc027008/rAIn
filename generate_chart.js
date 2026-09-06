@@ -103,12 +103,17 @@ const globalProgress = i / totalFrames;
     if (globalProgress <= startThreshold) {
       currentHourly.push(0);
       currentCumulative.push(null);
-      localProgresses.push(0); // ★【追加位置 2】未開始時は 0 を追加
+      localProgresses.push(0);
     } else {
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
+      
+      // 棒グラフ（イージング適用）
       currentHourly.push(hourlyRain[j] * easeOutCubic(localProgress));
-      currentCumulative.push(cumulativeRain[j]);
-      localProgresses.push(localProgress); // ★【追加位置 3】計算した進捗率(0.0〜1.0)を追加
+      
+      // ★ 折れ線グラフ（棒グラフと同じイージングを適用して速度を完全同期）
+      currentCumulative.push(cumulativeRain[j] * easeOutCubic(localProgress));
+      
+      localProgresses.push(localProgress);
     }
   }
 
