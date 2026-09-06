@@ -285,7 +285,7 @@ for (let i = 1; i <= totalFrames; i++) {
             font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
-            stepsize: 3,
+            stepSize: 3,
             color: '#111111',
             font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0,
