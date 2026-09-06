@@ -17,7 +17,7 @@ if (fs.existsSync(fontOpenSansCondRegularPath)) {
   registerFont(fontOpenSansCondRegularPath, { family: 'Open Sans Condensed', weight: 'normal' });
 }
 if (fs.existsSync(fontOpenSansCondBoldPath)) {
-  registerFont(fontOpenSansCondBoldPath, { family: 'Open Sans Condensed', weight: 'bold' });
+  registerFont(fontOpenSansCondBoldPath, { family: 'Open Sans Condensed Bold', weight: 'bold' });
 }
 
 // --- 2. 背景を絶対に白にするカスタムプラグイン ---
@@ -192,7 +192,7 @@ for (let i = 1; i <= totalFrames; i++) {
             align: 'end',
             offset: -2,
             color: '#111111',
-            font: { size: 22, family: 'Open Sans Condensed', weight: 'bold' },
+            font: { size: 22, family: 'Open Sans Condensed Bold', weight: 'bold' },
             textStrokeColor: '#ffffff',
             textStrokeWidth: 4,
             formatter: (value) => value
