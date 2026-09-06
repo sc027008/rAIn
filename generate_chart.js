@@ -222,7 +222,7 @@ for (let i = 1; i <= totalFrames; i++) {
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
             borderRadius: 4,
-            padding: { top: 3, bottom: 3, left: 6, right: 6 },
+            padding: { top: 3, bottom: 4, left: 6, right: 6 },
             font: {
               size: 22,
               family: 'Open Sans Condensed Bold',
