@@ -49,6 +49,8 @@ jobs:
           CHAT_WEBHOOK_URL: ${{ secrets.CHAT_WEBHOOK_URL }}
           TARGET_LAT: ${{ secrets.TARGET_LAT }}
           TARGET_LON: ${{ secrets.TARGET_LON }}
+          NIGHT_RAIN_THRESHOLD: ${{ secrets.NIGHT_RAIN_THRESHOLD }}
+          ACTIVATED_SLUDGE_URL: ${{ secrets.ACTIVATED_SLUDGE_URL }}
         run: |
           python main.py
 
