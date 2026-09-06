@@ -6,6 +6,7 @@ import uuid
 import random
 import requests
 import urllib.parse
+import subprocess
 from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
@@ -201,13 +202,12 @@ def get_nice_step(raw_max, steps=5):
 
 def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     """
-    QuickChart API を利用して、現在〜15時間後までの時間雨量（棒グラフ）と
-    積算雨量（折れ線グラフ）を組み合わせた複合グラフ画像URLを動的生成します。
+    generate_chart.js (Node.js/Chart.js) をローカル実行して PNG 画像を生成し、
+    GitHub raw URL (raw.githubusercontent.com) を返します。
     """
     all_rain = [current_rain_val] + hourly_rain_list
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
-    datalabel_display = [val >= 0.5 for val in all_rain]
     
     cumulative_rain = []
     total = 0.0
@@ -227,119 +227,62 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 
     title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 8 + "折れ線グラフ: 積算雨量 [mm]↓"
 
+    # キャッシュ事故を防ぐユニークファイル名 (ミリ秒タイムスタンプ + ランダム文字列)
+    jst = timezone(timedelta(hours=9))
+    timestamp_str = datetime.now(jst).strftime("%Y%m%d_%H%M%S_%f")[:18]
+    filename = f"chart_{timestamp_str}.png"
+    output_path = os.path.join("charts", filename)
+
+    # Node.js 側へ渡す構造化パラメータ JSON
+    params = {
+        "labels": labels,
+        "hourlyRain": all_rain,
+        "cumulativeRain": cumulative_rain,
+        "barColors": bar_colors,
+        "y1Max": y1_max,
+        "stepY1": step_y1,
+        "y2Max": y2_max,
+        "stepY2": step_y2,
+        "titleText": title_text,
+        "outputPath": output_path
+    }
+
+    try:
+        # Node.js スクリプトを呼び出してローカルで PNG 生成
+        cmd = ["node", "generate_chart.js", json.dumps(params)]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        print(result.stdout.strip())
+
+        # GITHUB_REPOSITORY 環境変数 (例: "owner/repo") から raw URL を自動生成
+        repo = os.environ.get("GITHUB_REPOSITORY")
+        if repo and os.path.exists(output_path):
+            return f"https://raw.githubusercontent.com/{repo}/main/charts/{filename}"
+
+    except Exception as e:
+        print(f"ローカルグラフ画像生成エラー: {e}")
+
+    # フォールバック (万が一失敗した場合は従来の QuickChart URL を一時生成)
     chart_config = {
         "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [
-                {
-                    "type": "line",
-                    "label": "時間雨量ラベル用ダミー",
-                    "data": all_rain,
-                    "borderColor": "transparent",
-                    "backgroundColor": "transparent",
-                    "pointRadius": 0,
-                    "yAxisID": "y1",
-                    "order": 0,
-                    "datalabels": {
-                        "display": datalabel_display,
-                        "anchor": "end",
-                        "align": "end",
-                        "offset": -2,
-                        "color": "#111111",
-                        "font": {"size": 20, "family": "LINE Seed JP", "weight": "bold"},
-                        "textStrokeColor": "#ffffff",
-                        "textStrokeWidth": 4
-                    }
-                },
-                {
-                    "type": "line",
-                    "label": "積算雨量(mm)",
-                    "data": cumulative_rain,
-                    "borderColor": "#7B1FA2",
-                    "borderWidth": 4,
-                    "pointRadius": 0,
-                    "fill": True,
-                    "backgroundColor": "rgba(123, 31, 162, 0.08)",
-                    "yAxisID": "y2",
-                    "order": 1,
-                    "datalabels": {"display": False}
-                },
-                {
-                    "type": "line",
-                    "label": "積算雨量_白縁取り",
-                    "data": cumulative_rain,
-                    "borderColor": "rgba(255, 255, 255, 0.7)",
-                    "borderWidth": 10,
-                    "pointRadius": 0,
-                    "fill": False,
-                    "yAxisID": "y2",
-                    "order": 2,
-                    "datalabels": {"display": False}
-                },
-                {
-                    "type": "bar",
-                    "label": "時間雨量(mm/h)",
-                    "data": all_rain,
-                    "backgroundColor": bar_colors,
-                    "borderRadius": 6,
-                    "yAxisID": "y1",
-                    "order": 3,
-                    "datalabels": {"display": False}
-                }
+                {"type": "line", "data": all_rain, "borderColor": "transparent", "backgroundColor": "transparent", "pointRadius": 0, "yAxisID": "y1", "order": 0, "datalabels": {"display": [val >= 0.5 for val in all_rain], "anchor": "end", "align": "end", "offset": -2, "color": "#111111", "font": {"size": 20, "family": "LINE Seed JP", "weight": "bold"}, "textStrokeColor": "#ffffff", "textStrokeWidth": 4}},
+                {"type": "line", "data": cumulative_rain, "borderColor": "#7B1FA2", "borderWidth": 4, "pointRadius": 0, "fill": True, "backgroundColor": "rgba(123, 31, 162, 0.08)", "yAxisID": "y2", "order": 1, "datalabels": {"display": False}},
+                {"type": "line", "data": cumulative_rain, "borderColor": "rgba(255, 255, 255, 0.7)", "borderWidth": 10, "pointRadius": 0, "fill": False, "yAxisID": "y2", "order": 2, "datalabels": {"display": False}},
+                {"type": "bar", "data": all_rain, "backgroundColor": bar_colors, "borderRadius": 6, "yAxisID": "y1", "order": 3, "datalabels": {"display": False}}
             ]
         },
         "options": {
-            "plugins": {
-                "title": {
-                    "display": True,
-                    "text": title_text,
-                    "color": "#111111",
-                    "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"},
-                    "padding": 12
-                },
-                "legend": {"display": False},
-                "datalabels": {"display": True}
-            },
+            "plugins": {"title": {"display": True, "text": title_text, "color": "#111111", "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"}, "padding": 12}, "legend": {"display": False}, "datalabels": {"display": True}},
             "layout": {"padding": {"top": 5, "left": 10, "right": 10, "bottom": 5}},
             "scales": {
-                "x": {
-                    "grid": {"display": False},
-                    "title": {"display": True, "text": "時間後", "color": "#111111", "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"}},
-                    "ticks": {"color": "#111111", "font": {"size": 18, "family": "Noto Sans CJK JP"}, "maxRotation": 0}
-                },
-                "y1": {
-                    "type": "linear",
-                    "position": "left",
-                    "min": 0,
-                    "max": y1_max,
-                    "ticks": {"stepSize": step_y1, "color": "#111111", "font": {"size": 19, "family": "LINE Seed JP"}},
-                    "grid": {"color": "#bdbdbd"},
-                    "border": {"dash": [2, 3]}
-                },
-                "y2": {
-                    "type": "linear",
-                    "position": "right",
-                    "min": 0,
-                    "max": y2_max,
-                    "ticks": {"stepSize": step_y2, "color": "#111111", "font": {"size": 19, "family": "LINE Seed JP"}},
-                    "grid": {"drawOnChartArea": True, "color": "#bdbdbd"},
-                    "border": {"dash": [2, 3]}
-                }
+                "x": {"grid": {"display": False}, "title": {"display": True, "text": "時間後", "color": "#111111", "font": {"size": 19, "family": "Noto Sans CJK JP", "weight": "bold"}}, "ticks": {"color": "#111111", "font": {"size": 18, "family": "Noto Sans CJK JP"}, "maxRotation": 0}},
+                "y1": {"type": "linear", "position": "left", "min": 0, "max": y1_max, "ticks": {"stepSize": step_y1, "color": "#111111", "font": {"size": 19, "family": "LINE Seed JP"}}, "grid": {"color": "#bdbdbd"}, "border": {"dash": [2, 3]}},
+                "y2": {"type": "linear", "position": "right", "min": 0, "max": y2_max, "ticks": {"stepSize": step_y2, "color": "#111111", "font": {"size": 19, "family": "LINE Seed JP"}}, "grid": {"drawOnChartArea": True, "color": "#bdbdbd"}, "border": {"dash": [2, 3]}}
             }
         }
     }
-
-    try:
-        payload = {"version": "4", "chart": chart_config, "width": 600, "height": 300, "backgroundColor": "white", "devicePixelRatio": 3}
-        res = requests.post("https://quickchart.io/chart/create", json=payload, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("success") and "url" in data:
-                return data["url"]
-    except Exception:
-        pass
-
     compact_json = json.dumps(chart_config, separators=(',', ':'))
     encoded = urllib.parse.quote(compact_json)
     return f"https://quickchart.io/chart?v=4&c={encoded}&w=600&h=300&bkg=white&devicePixelRatio=3&f=LINE+Seed+JP"
@@ -751,7 +694,7 @@ if __name__ == "__main__":
     # ---------------------------------------------------------
     
     # 【本番運用モード】（時間・曜日ガードあり）
-    main()
+    # main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信）
-    # test_forced_notification()
+    test_forced_notification()
