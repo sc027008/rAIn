@@ -41,15 +41,15 @@ const sourceTextPlugin = {
     
     // フォントと色の設定
     ctx.font = 'bold 16px "LINE Seed JP"';
-    ctx.fillStyle = '#666666'; // 主張しすぎないダークグレー
+    ctx.fillStyle = '#777777'; // 主張しすぎないダークグレー
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     
     // 描画位置：グラフエリアの右下から少し離した位置
     const x = chartArea.right;
-    const y = chartArea.bottom + 22; // X軸ラベルの下あたり
+    const y = height - 6; // X軸ラベルの下あたり
     
-    ctx.fillText('出典：気象庁', x, y);
+    ctx.fillText('出典: 気象庁', x, y);
     ctx.restore();
   }
 };
