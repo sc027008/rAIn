@@ -224,8 +224,8 @@ const globalProgress = i / totalFrames;
         title: {
           display: true,
           text: titleText,
-          color: '#333333',
-          font: { size: 20, family: 'LINE Seed JP', weight: 'bold' },
+          color: '#555555',
+          font: { size: 21, family: 'LINE Seed JP', weight: 'bold' },
           padding: 12
         },
         legend: { display: false },
@@ -238,8 +238,8 @@ const globalProgress = i / totalFrames;
           title: {
             display: true,
             text: '時間後',
-            color: '#333333',
-            font: { size: 20, family: 'LINE Seed JP', weight: 'bold' }
+            color: '#555555',
+            font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
             color: '#111111',
@@ -267,7 +267,7 @@ const globalProgress = i / totalFrames;
           max: y2Max,
           ticks: {
             stepSize: stepY2,
-            color: '#111111',
+            color: '#7B1FA2',
             font: { size: 19, family: 'Noto Sans', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
