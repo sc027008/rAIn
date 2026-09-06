@@ -2,8 +2,8 @@ name: Rain Alert Runner
 
 on:
   schedule:
-    # JST 8:00〜19:00 (UTC 23:00 および 0:00〜10:00) の間、5分おきに自動実行
-    - cron: '*/5 23,0-10 * * *'
+    # JST 8:00〜19:00 (UTC 23:00 および 0:00〜10:00) の間、5分おき（2分、7分、12分...）に実行
+    - cron: '2-57/5 23,0-10 * * *'
   workflow_dispatch:
 
 permissions:
