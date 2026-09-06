@@ -58,27 +58,26 @@ const sourceTextPlugin = {
 const customTitlePlugin = {
   id: 'customTitle',
   afterDraw: (chart) => {
-    const { ctx, scales } = chart;
+    const { ctx, width, options } = chart;
     ctx.save();
 
     ctx.font = 'bold 21px "LINE Seed JP"';
     ctx.textBaseline = 'top';
 
-    const y = 10; // 確保した上部余白内の最適な高さ
+    const y = 8;
+    // layout.padding の設定値を取得（未設定時はデフォルト値）
+    const paddingLeft = options.layout?.padding?.left ?? 10;
+    const paddingRight = options.layout?.padding?.right ?? 10;
 
-    // 1. 時間雨量（左側）：y1軸の領域の左端（y1.left）に揃える
-    if (scales.y1) {
-      ctx.fillStyle = '#555555';
-      ctx.textAlign = 'left';
-      ctx.fillText('▼\u2009棒: 時間雨量 mm/h', scales.y1.left, y);
-    }
+    // 1. 時間雨量（左側）：左側パディングの位置（10）にぴったり左揃え
+    ctx.fillStyle = '#555555';
+    ctx.textAlign = 'left';
+    ctx.fillText('▼\u2009棒: 時間雨量 mm/h', paddingLeft, y);
 
-    // 2. 積算雨量（右側）：y2軸の領域の右端（y2.right）に揃える
-    if (scales.y2) {
-      ctx.fillStyle = '#7B1FA2';
-      ctx.textAlign = 'right';
-      ctx.fillText('折れ線: 積算雨量 mm\u2009▼', scales.y2.right, y);
-    }
+    // 2. 積算雨量（右側）：右側パディングの位置（width - 10）にぴったり右揃え
+    ctx.fillStyle = '#7B1FA2';
+    ctx.textAlign = 'right';
+    ctx.fillText('折れ線: 積算雨量 mm\u2009▼', width - paddingRight, y);
 
     ctx.restore();
   }
@@ -257,7 +256,7 @@ const globalProgress = i / totalFrames;
       },
       layout: {
         padding: {
-          top: 48,
+          top: 50,
           left: 10,
           right: 10,
           bottom: 5
