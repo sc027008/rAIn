@@ -203,7 +203,7 @@ const globalProgress = i / totalFrames;
           display: true,
           text: titleText,
           color: '#111111',
-          font: { size: 19, family: 'LINE Seed JP', weight: 'bold' },
+          font: { size: 19, family: 'Noto Sans', 'LINE Seed JP', weight: 'bold' },
           padding: 12
         },
         legend: { display: false },
@@ -236,7 +236,7 @@ const globalProgress = i / totalFrames;
             font: { size: 19, family: 'Noto Sans', weight: 'normal' }
           },
           grid: { color: '#bdbdbd' },
-          border: { dash: [2, 3] }
+          border: { display: false, dash: [2, 3] }
         },
         y2: {
           type: 'linear',
@@ -249,7 +249,7 @@ const globalProgress = i / totalFrames;
             font: { size: 19, family: 'Noto Sans', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
-          border: { dash: [2, 3] }
+          border: { display: false, dash: [2, 3] }
         }
       }
     }
