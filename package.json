@@ -5,6 +5,7 @@
   "dependencies": {
     "canvas": "^2.11.2",
     "chart.js": "^4.4.1",
-    "chartjs-plugin-datalabels": "^2.2.0"
+    "chartjs-plugin-datalabels": "^2.2.0",
+    "gifencoder": "^2.0.1"
   }
 }
