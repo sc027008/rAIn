@@ -174,7 +174,7 @@ for (let i = 1; i <= totalFrames; i++) {
       layout: { padding: { top: 5, left: 10, right: 10, bottom: 5 } },
       scales: {
         x: {
-          grid: { display: False },
+          grid: { display: false },
           title: {
             display: true,
             text: '時間後',
