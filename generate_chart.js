@@ -68,12 +68,12 @@ const customTitlePlugin = {
     // 1. 左タイトル：数字「10」の左端ラインに合わせる
     ctx.fillStyle = '#555555';
     ctx.textAlign = 'left';
-    ctx.fillText('▼\u2009棒: 時間雨量 mm/h', chartArea.left - labelOffset, y);
+    ctx.fillText('▼\u2009棒\u200A: 時\u200A間\u200A雨\u200A量 mm/h', chartArea.left - labelOffset, y);
 
     // 2. 右タイトル：数字「25」の右端ラインに合わせる
     ctx.fillStyle = '#7B1FA2';
     ctx.textAlign = 'right';
-    ctx.fillText('折れ線: 積算雨量 mm\u2009▼', chartArea.right + labelOffset, y);
+    ctx.fillText('折れ線\u200A: 積\u200A算\u200A雨\u200A量 mm\u2009▼', chartArea.right + labelOffset, y);
 
     ctx.restore();
   }
