@@ -58,6 +58,7 @@ jobs:
             git config --local user.email "github-actions[bot]@users.noreply.github.com"
             git add package-lock.json
             git commit -m "Chore: Add package-lock.json [skip ci]" || true
+            git pull origin main --rebase || true
             git push || true
           else
             npm ci || npm install
