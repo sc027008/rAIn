@@ -5,7 +5,7 @@ const GIFEncoder = require('gifencoder');
 const fs = require('fs');
 const path = require('path');
 
-// --- 1. フォントの登録 ---
+// --- 1. フォント登録 ---
 const fontLineBoldPath = '/usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf';
 const fontNotoRegularPath = '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf';
 const fontNotoBoldPath = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf';
@@ -20,7 +20,20 @@ if (fs.existsSync(fontNotoBoldPath)) {
   registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
 }
 
-// --- 2. 引数の取得 ---
+// --- 2. 背景を絶対に白で塗るカスタムプラグイン ---
+const whiteBackgroundPlugin = {
+  id: 'customCanvasBackgroundColor',
+  beforeDraw: (chart) => {
+    const { ctx, width, height } = chart;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+};
+
+// --- 3. 引数の取得 ---
 const inputJson = process.argv[2];
 if (!inputJson) {
   console.error("エラー: グラフデータ(JSON)が渡されていません。");
@@ -41,15 +54,13 @@ const {
   outputPath
 } = params;
 
-// 出力パスの拡張子を .gif へ自動変換
 const gifOutputPath = outputPath.replace(/\.png$/, '.gif');
-
 const dir = path.dirname(gifOutputPath);
 if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// --- 3. GIFEncoder と Canvas の初期化 ---
+// --- 4. GIFEncoder の初期化 ---
 const width = 600;
 const height = 300;
 
@@ -57,33 +68,28 @@ const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
 
 encoder.start();
-encoder.setRepeat(-1);   // 1回だけ再生して静止 (ループなし)
-encoder.setDelay(80);   // 1フレームあたりの表示時間 (80ms)
-encoder.setQuality(10); // 画質 (1:最高品質 〜 20)
+encoder.setRepeat(-1); // 1回だけ再生して静止 (ループなし)
+encoder.setDelay(80);   // 80ms/frame
+encoder.setQuality(10);
 
 const canvas = createCanvas(width, height);
 const ctx = canvas.getContext('2d');
 
-// --- 4. イージング関数 (Smooth Ease-Out) ---
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// --- 5. フレーム生成処理 (15フレームでアニメーション描画) ---
 const totalFrames = 15;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 1. フレーム描画前に必ず背景を白で塗りつぶす (黒潰れ防止)
+  // Canvas 側も白で塗りつぶし
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
   const progress = easeOutCubic(i / totalFrames);
-
-  // 進捗状況に応じて数値を拡大
   const currentHourly = hourlyRain.map(val => val * progress);
   const currentCumulative = cumulativeRain.map(val => val * progress);
   
-  // 最終フレームでのみ数値ラベルを表示
   const datalabelDisplay = (i === totalFrames)
     ? hourlyRain.map(val => val >= 0.5)
     : hourlyRain.map(() => false);
@@ -150,7 +156,7 @@ for (let i = 1; i <= totalFrames; i++) {
         }
       ]
     },
-    plugins: [ChartDataLabels],
+    plugins: [ChartDataLabels, whiteBackgroundPlugin],
     options: {
       animation: false,
       responsive: false,
@@ -168,7 +174,7 @@ for (let i = 1; i <= totalFrames; i++) {
       layout: { padding: { top: 5, left: 10, right: 10, bottom: 5 } },
       scales: {
         x: {
-          grid: { display: false },
+          grid: { display: False },
           title: {
             display: true,
             text: '時間後',
@@ -211,14 +217,10 @@ for (let i = 1; i <= totalFrames; i++) {
     }
   };
 
-  // 背景を白で塗りつぶしてから描画
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, width, height);
-
   const chart = new Chart(ctx, chartConfig);
   encoder.addFrame(ctx);
   chart.destroy();
 }
 
 encoder.finish();
-console.log(`アニメーションGIFを生成しました: ${gifOutputPath}`);
+console.log(`アニメーションGIF生成完了: ${gifOutputPath}`);
