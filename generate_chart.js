@@ -47,7 +47,7 @@ const sourceTextPlugin = {
     
     // 描画位置：グラフエリアの右下から少し離した位置
     const x = chartArea.right;
-    const y = height - 6; // X軸ラベルの下あたり
+    const y = height - 4; // X軸ラベルの下あたり
     
     ctx.fillText('出典: 気象庁', x, y);
     ctx.restore();
@@ -58,23 +58,27 @@ const sourceTextPlugin = {
 const customTitlePlugin = {
   id: 'customTitle',
   afterDraw: (chart) => {
-    const { ctx, chartArea } = chart;
+    const { ctx, scales } = chart;
     ctx.save();
 
     ctx.font = 'bold 21px "LINE Seed JP"';
     ctx.textBaseline = 'top';
 
-    const y = 8; // layout.padding.top で確保したスペース内に配置
+    const y = 10; // 確保した上部余白内の最適な高さ
 
-    // 時間雨量（左側・Y1軸側）
-    ctx.fillStyle = '#555555';
-    ctx.textAlign = 'left';
-    ctx.fillText('▼\u2009棒: 時間雨量 mm/h', chartArea.left, y);
+    // 1. 時間雨量（左側）：y1軸の領域の左端（y1.left）に揃える
+    if (scales.y1) {
+      ctx.fillStyle = '#555555';
+      ctx.textAlign = 'left';
+      ctx.fillText('▼\u2009棒: 時間雨量 mm/h', scales.y1.left, y);
+    }
 
-    // 積算雨量（右側・Y2軸側）
-    ctx.fillStyle = '#7B1FA2';
-    ctx.textAlign = 'right';
-    ctx.fillText('折れ線: 積算雨量 mm\u2009▼', chartArea.right, y);
+    // 2. 積算雨量（右側）：y2軸の領域の右端（y2.right）に揃える
+    if (scales.y2) {
+      ctx.fillStyle = '#7B1FA2';
+      ctx.textAlign = 'right';
+      ctx.fillText('折れ線: 積算雨量 mm\u2009▼', scales.y2.right, y);
+    }
 
     ctx.restore();
   }
@@ -253,7 +257,7 @@ const globalProgress = i / totalFrames;
       },
       layout: {
         padding: {
-          top: 40,
+          top: 48,
           left: 10,
           right: 10,
           bottom: 5
