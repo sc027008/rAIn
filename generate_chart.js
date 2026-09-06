@@ -227,7 +227,8 @@ for (let i = 1; i <= totalFrames; i++) {
               size: 22,
               family: 'Open Sans Condensed Bold',
               weight: 'bold'
-            }
+            },
+            formatter: (value) => Math.round(value) // ★ 整数に四捨五入する場合
           }
         },
         {
