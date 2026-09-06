@@ -47,7 +47,7 @@ const sourceTextPlugin = {
     
     // 描画位置：グラフエリアの右下から少し離した位置
     const x = chartArea.right;
-    const y = height - 4; // X軸ラベルの下あたり
+    const y = height - 5; // X軸ラベルの下あたり
     
     ctx.fillText('出典: 気象庁', x, y);
     ctx.restore();
