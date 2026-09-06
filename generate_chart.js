@@ -216,7 +216,7 @@ for (let i = 1; i <= totalFrames; i++) {
               const val = context.dataset.data[context.dataIndex];
               return isLastIndex && val !== null && val !== undefined;
             },
-            align: 'right',   // 真右を基準軸に固定
+            align: 315,   // 右上
             anchor: 'end',    // データポイントの外側端
             offset: 4,        // 右方向への距離
             color: '#ffffff',
