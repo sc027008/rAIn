@@ -12,14 +12,10 @@ const fontNotoBoldPath = path.join(__dirname, 'fonts', 'NotoSans-Bold.ttf');
 
 if (fs.existsSync(fontLineBoldPath)) {
   registerFont(fontLineBoldPath, { family: 'LINE Seed JP', weight: 'bold' });
-} else {
-  console.warn(`警告: フォントが見つかりません: ${fontLineBoldPath}`);
 }
-
 if (fs.existsSync(fontNotoRegularPath)) {
   registerFont(fontNotoRegularPath, { family: 'Noto Sans', weight: 'normal' });
 }
-
 if (fs.existsSync(fontNotoBoldPath)) {
   registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
 }
@@ -57,9 +53,7 @@ const {
   outputPath
 } = params;
 
-// 出力パスを .gif へ変更
 const gifOutputPath = outputPath.replace(/\.png$/, '.gif');
-
 const dir = path.dirname(gifOutputPath);
 if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
@@ -73,8 +67,8 @@ const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
 
 encoder.start();
-encoder.setRepeat(-1); // 1回だけ再生して静止 (PC/WEB環境用)
-encoder.setQuality(10); // 画質 (1:最高品質 〜 20)
+encoder.setRepeat(-1); // 1回だけ再生して静止
+encoder.setQuality(10);
 
 const canvas = createCanvas(width, height);
 const ctx = canvas.getContext('2d');
@@ -83,25 +77,43 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// --- 5. フレーム生成処理 (全15フレーム) ---
+// --- 5. 時系列アニメーション用フレーム生成処理 ---
 const totalFrames = 15;
+const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
   // 1〜14フレーム目は 80ms、最後の15フレーム目（完成形）は 30,000ms（30秒間）表示
   if (i === totalFrames) {
-    encoder.setDelay(30000); // 30秒
+    encoder.setDelay(30000);
   } else {
-    encoder.setDelay(80); // 80ms
+    encoder.setDelay(80);
   }
 
-  // エンコード前に Canvas 自体を白でクリア塗りつぶし
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-  const progress = easeOutCubic(i / totalFrames);
-  const currentHourly = hourlyRain.map(val => val * progress);
-  const currentCumulative = cumulativeRain.map(val => val * progress);
-  
+  const globalProgress = i / totalFrames;
+
+  // 時系列（左から右）へ出現させる進捗計算
+  const currentHourly = [];
+  const currentCumulative = [];
+
+  for (let j = 0; j < dataLength; j++) {
+    // 時間軸の位置（0.0 〜 1.0）に応じた出現開始タイミングの設定
+    const startThreshold = (j / dataLength) * 0.7; // 全体の前70%の期間で左から順に順次発火
+    if (globalProgress <= startThreshold) {
+      currentHourly.push(0);
+      currentCumulative.push(null); // 折れ線は進行前の地点を null にして非表示
+    } else {
+      const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
+      // 棒グラフ: 左から順に下から伸びる
+      currentHourly.push(hourlyRain[j] * easeOutCubic(localProgress));
+      // 折れ線グラフ: 上下伸縮せず、順次実値で線が左から伸びる
+      currentCumulative.push(cumulativeRain[j]);
+    }
+  }
+
+  // 数値数値数値データラベルは最終フレームのみ表示
   const datalabelDisplay = (i === totalFrames)
     ? hourlyRain.map(val => val >= 0.5)
     : hourlyRain.map(() => false);
@@ -140,6 +152,7 @@ for (let i = 1; i <= totalFrames; i++) {
           pointRadius: 0,
           fill: true,
           backgroundColor: 'rgba(123, 31, 162, 0.08)',
+          spanGaps: false, // null 地点への描画をカットして左から伸びる表現にする
           yAxisID: 'y2',
           order: 1,
           datalabels: { display: false }
@@ -152,6 +165,7 @@ for (let i = 1; i <= totalFrames; i++) {
           borderWidth: 10,
           pointRadius: 0,
           fill: false,
+          spanGaps: false,
           yAxisID: 'y2',
           order: 2,
           datalabels: { display: false }
