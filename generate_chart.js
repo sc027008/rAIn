@@ -210,7 +210,25 @@ for (let i = 1; i <= totalFrames; i++) {
           spanGaps: false,
           yAxisID: 'y2',
           order: 1,
-          datalabels: { display: false }
+          datalabels: {
+            display: (context) => {
+              const isLastIndex = context.dataIndex === context.dataset.data.length - 1;
+              const val = context.dataset.data[context.dataIndex];
+              return isLastIndex && val !== null && val !== undefined;
+            },
+            align: 'right',
+            anchor: 'center',
+            offset: 4,
+            color: '#ffffff',
+            backgroundColor: '#7B1FA2',
+            borderRadius: 4,
+            padding: { top: 3, bottom: 3, left: 6, right: 6 },
+            font: {
+              size: 22,
+              family: 'Open Sans Condensed Bold',
+              weight: 'bold'
+            }
+          }
         },
         {
           type: 'line',
@@ -233,24 +251,7 @@ for (let i = 1; i <= totalFrames; i++) {
           borderRadius: 6,
           yAxisID: 'y1',
           order: 3,
-          datalabels: {
-            display: (context) => {
-              const isLastIndex = context.dataIndex === context.dataset.data.length - 1;
-              const val = context.dataset.data[context.dataIndex];
-              return isLastIndex && val !== null && val !== undefined;
-            },
-            align: 'right',
-            anchor: 'center',
-            offset: 4,
-            color: '#ffffff',
-            backgroundColor: '#7B1FA2',
-            borderRadius: 4,
-            padding: { top: 3, bottom: 3, left: 6, right: 6 },
-            font: {
-              size: 22,
-              family: 'Open Sans Condensed Bold',
-              weight: 'bold'
-            }
+          datalabels: { display: false }
           }
         }
       ]
