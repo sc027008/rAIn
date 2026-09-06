@@ -18,12 +18,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip' # ★ pip パッケージ（pandas等）のキャッシュを有効化
 
       - name: Node.js環境のセットアップ
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # cache: 'npm'
+          cache: 'npm' # ★ npm パッケージのキャッシュを有効化（# を除去）
 
       - name: Node.js 依存ライブラリのインストール & Lockファイル自動生成
         run: |
@@ -56,7 +57,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin main --rebase || true
-          git add state.json 2>/dev/null || true
+          git add state.json 2>/devnull || true
           if git status --porcelain | grep -q "state.json"; then
             git commit -m "Chore: Update state.json [skip ci]"
             git push
