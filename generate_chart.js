@@ -218,7 +218,7 @@ for (let i = 1; i <= totalFrames; i++) {
             },
             align: 315,   // 右上
             anchor: 'end',    // データポイントの外側端
-            offset: 4,        // 右方向への距離
+            offset: 6,        // 右方向への距離
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
             borderRadius: 4,
