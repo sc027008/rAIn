@@ -72,11 +72,11 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           
-          # state.json または charts/ ディレクトリ内に変更があればコミット
-          git add state.json charts/ 2>/dev/null || true
+          # 追加・変更・削除されたファイルを一括ステージング
+          git add -A state.json charts/ 2>/dev/null || true
           if git status --porcelain | grep -qE "state.json|charts/"; then
-            git commit -m "Chore: Update state.json and generated charts [skip ci]"
+            git commit -m "Chore: Update state.json and cleanup charts [skip ci]"
             git push
           else
-            echo "state.json に変更はありません。"
+            echo "更新・削除対象のファイルはありません。"
           fi
