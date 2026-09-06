@@ -54,7 +54,7 @@ const sourceTextPlugin = {
   }
 };
 
-// --- タイトル左右同期カスタムプラグイン ---
+// 上部左右タイトルの2色描画プラグイン
 const customTitlePlugin = {
   id: 'customTitle',
   afterDraw: (chart) => {
@@ -64,18 +64,16 @@ const customTitlePlugin = {
     ctx.font = 'bold 21px "LINE Seed JP"';
     ctx.textBaseline = 'top';
 
-    const y = 10; // 上部マージン位置
+    const y = 8; // layout.padding.top で確保したスペース内に配置
 
-    // 1. 左側タイトル：時間雨量（黒/濃いグレー）
+    // 時間雨量（左側・Y1軸側）
     ctx.fillStyle = '#555555';
     ctx.textAlign = 'left';
-    // Y1軸（左枠線）の真上に配置
     ctx.fillText('▼\u2009棒: 時間雨量 mm/h', chartArea.left, y);
 
-    // 2. 右側タイトル：積算雨量（折れ線と同じ紫色）
+    // 積算雨量（右側・Y2軸側）
     ctx.fillStyle = '#7B1FA2';
     ctx.textAlign = 'right';
-    // Y2軸（右枠線）の真上に配置
     ctx.fillText('折れ線: 積算雨量 mm\u2009▼', chartArea.right, y);
 
     ctx.restore();
@@ -249,12 +247,18 @@ const globalProgress = i / totalFrames;
       animation: false,
       responsive: false,
       plugins: {
-        // ★ 標準タイトルをオフにする
         title: { display: false },
         legend: { display: false },
         datalabels: { display: true }
       },
-      layout: { padding: { top: 5, left: 10, right: 10, bottom: 5 } },
+      layout: {
+        padding: {
+          top: 40,
+          left: 10,
+          right: 10,
+          bottom: 5
+        }
+      },
       scales: {
         x: {
           grid: { display: false },
