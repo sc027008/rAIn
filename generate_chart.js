@@ -24,13 +24,12 @@ if (fs.existsSync(fontNotoBoldPath)) {
   registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
 }
 
-// --- 2. 背景を絶対に白で塗るカスタムプラグイン ---
+// --- 2. 背景を絶対に白にするカスタムプラグイン ---
 const whiteBackgroundPlugin = {
   id: 'customCanvasBackgroundColor',
   beforeDraw: (chart) => {
     const { ctx, width, height } = chart;
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-over';
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
@@ -58,13 +57,15 @@ const {
   outputPath
 } = params;
 
+// 出力パスを .gif へ変更
 const gifOutputPath = outputPath.replace(/\.png$/, '.gif');
+
 const dir = path.dirname(gifOutputPath);
 if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// --- 4. GIFEncoder の初期化 ---
+// --- 4. GIFEncoder と Canvas の初期化 ---
 const width = 600;
 const height = 300;
 
@@ -72,9 +73,8 @@ const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
 
 encoder.start();
-encoder.setRepeat(-1); // 1回だけ再生して静止 (ループなし)
-encoder.setDelay(80);   // 80ms/frame
-encoder.setQuality(10);
+encoder.setRepeat(-1); // 1回だけ再生して静止 (PC/WEB環境用)
+encoder.setQuality(10); // 画質 (1:最高品質 〜 20)
 
 const canvas = createCanvas(width, height);
 const ctx = canvas.getContext('2d');
@@ -83,10 +83,18 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+// --- 5. フレーム生成処理 (全15フレーム) ---
 const totalFrames = 15;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // Canvas 側も白で塗りつぶし
+  // 1〜14フレーム目は 80ms、最後の15フレーム目（完成形）は 30,000ms（30秒間）表示
+  if (i === totalFrames) {
+    encoder.setDelay(30000); // 30秒
+  } else {
+    encoder.setDelay(80); // 80ms
+  }
+
+  // エンコード前に Canvas 自体を白でクリア塗りつぶし
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
@@ -227,4 +235,4 @@ for (let i = 1; i <= totalFrames; i++) {
 }
 
 encoder.finish();
-console.log(`アニメーションGIF生成完了: ${gifOutputPath}`);
+console.log(`アニメーションGIFを生成しました: ${gifOutputPath}`);
