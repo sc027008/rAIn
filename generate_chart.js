@@ -57,7 +57,7 @@ const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
 
 encoder.start();
-encoder.setRepeat(1);   // 1回だけ再生して静止 (ループなし)
+encoder.setRepeat(-1);   // 1回だけ再生して静止 (ループなし)
 encoder.setDelay(80);   // 1フレームあたりの表示時間 (80ms)
 encoder.setQuality(10); // 画質 (1:最高品質 〜 20)
 
@@ -73,6 +73,10 @@ function easeOutCubic(t) {
 const totalFrames = 15;
 
 for (let i = 1; i <= totalFrames; i++) {
+  // 1. フレーム描画前に必ず背景を白で塗りつぶす (黒潰れ防止)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+
   const progress = easeOutCubic(i / totalFrames);
 
   // 進捗状況に応じて数値を拡大
