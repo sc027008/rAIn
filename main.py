@@ -296,7 +296,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    title_text = "▼\u2005棒: 時間雨量 mm/h" + " " * 13 + "折れ線: 積算雨量 mm\u2005▼"
+    title_text = "▼\u2009棒: 時間雨量 mm/h" + " " * 15 + "折れ線: 積算雨量 mm\u2009▼"
 
     jst = timezone(timedelta(hours=9))
     timestamp_str = datetime.now(jst).strftime("%Y%m%d_%H%M%S_%f")[:18]
