@@ -78,15 +78,15 @@ function easeOutCubic(t) {
 }
 
 // --- 5. 時系列アニメーション用フレーム生成処理 ---
-const totalFrames = 20; // 15 から 20 フレームへ変更 (全体のアニメーションをより滑らか・低速化)
+const totalFrames = 60; // フレーム数
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 1〜19フレーム目は 100ms (ややゆったり)、最後の20フレーム目（完成形）は 20,000ms（20秒間）表示
+  // 最後の20フレーム目（完成形）は 20,000ms（20秒間）表示
   if (i === totalFrames) {
     encoder.setDelay(20000);
   } else {
-    encoder.setDelay(100); // 80ms から 100ms へ変更
+    encoder.setDelay(34); // 1フレームの秒数 [ms]
   }
 
   ctx.fillStyle = '#ffffff';
@@ -112,7 +112,7 @@ const globalProgress = i / totalFrames;
       currentHourly.push(hourlyRain[j] * easedProgress);
       
       // 折れ線グラフ：棒がある程度伸びたタイミングで実値を表示
-      if (easedProgress >= 0.8) {
+      if (easedProgress >= 0.75) {
         currentCumulative.push(cumulativeRain[j]); // 実値を表示
       } else {
         currentCumulative.push(null); // それまでは非表示
