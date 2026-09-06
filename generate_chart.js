@@ -63,7 +63,7 @@ const customTitlePlugin = {
     ctx.textBaseline = 'top';
 
     const y = 8;
-    const labelOffset = 32;
+    const labelOffset = 31;
 
     // 1. 左タイトル：数字「10」の左端ラインに合わせる
     ctx.fillStyle = '#555555';
@@ -283,6 +283,7 @@ for (let i = 1; i <= totalFrames; i++) {
             font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
+            stepsize: 3,
             color: '#111111',
             font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0,
