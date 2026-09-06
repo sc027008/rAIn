@@ -78,15 +78,15 @@ function easeOutCubic(t) {
 }
 
 // --- 5. 時系列アニメーション用フレーム生成処理 ---
-const totalFrames = 15;
+const totalFrames = 20; // 15 から 20 フレームへ変更 (全体のアニメーションをより滑らか・低速化)
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 1〜14フレーム目は 80ms、最後の15フレーム目（完成形）は 30,000ms（30秒間）表示
+  // 1〜19フレーム目は 100ms (ややゆったり)、最後の20フレーム目（完成形）は 30,000ms（30秒間）表示
   if (i === totalFrames) {
     encoder.setDelay(30000);
   } else {
-    encoder.setDelay(80);
+    encoder.setDelay(100); // 80ms から 100ms へ変更
   }
 
   ctx.fillStyle = '#ffffff';
@@ -94,29 +94,27 @@ for (let i = 1; i <= totalFrames; i++) {
 
   const globalProgress = i / totalFrames;
 
-  // 時系列（左から右）へ出現させる進捗計算
   const currentHourly = [];
   const currentCumulative = [];
 
   for (let j = 0; j < dataLength; j++) {
-    // 時間軸の位置（0.0 〜 1.0）に応じた出現開始タイミングの設定
-    const startThreshold = (j / dataLength) * 0.7; // 全体の前70%の期間で左から順に順次発火
+    const startThreshold = (j / dataLength) * 0.7;
     if (globalProgress <= startThreshold) {
       currentHourly.push(0);
-      currentCumulative.push(null); // 折れ線は進行前の地点を null にして非表示
+      currentCumulative.push(null);
     } else {
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
-      // 棒グラフ: 左から順に下から伸びる
       currentHourly.push(hourlyRain[j] * easeOutCubic(localProgress));
-      // 折れ線グラフ: 上下伸縮せず、順次実値で線が左から伸びる
       currentCumulative.push(cumulativeRain[j]);
     }
   }
 
-  // 数値数値数値データラベルは最終フレームのみ表示
-  const datalabelDisplay = (i === totalFrames)
-    ? hourlyRain.map(val => val >= 0.5)
-    : hourlyRain.map(() => false);
+  // バーが目標の 80% 以上伸び切ったタイミングで数値ラベルを表示
+  const datalabelDisplay = (context) => {
+    const targetVal = hourlyRain[context.dataIndex];
+    const currentVal = currentHourly[context.dataIndex];
+    return targetVal >0 && currentVal >= (targetVal * 0.8);
+  };
 
   const chartConfig = {
     type: 'bar',
@@ -133,7 +131,7 @@ for (let i = 1; i <= totalFrames; i++) {
           yAxisID: 'y1',
           order: 0,
           datalabels: {
-            display: datalabelDisplay,
+            display: datalabelDisplay, // 進捗率判定関数を割り当て
             anchor: 'end',
             align: 'end',
             offset: -2,
