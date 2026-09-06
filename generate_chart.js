@@ -66,7 +66,7 @@ const customTitlePlugin = {
 
     const y = 8;
     // 数字「10」「25」（19px Noto Sans）の実際の飛び出し幅
-    const labelOffset = 16;
+    const labelOffset = 5;
 
     // 1. 左タイトル：数字「10」の左端ラインに合わせる
     ctx.fillStyle = '#555555';
