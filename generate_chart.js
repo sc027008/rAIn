@@ -216,8 +216,8 @@ for (let i = 1; i <= totalFrames; i++) {
               const val = context.dataset.data[context.dataIndex];
               return isLastIndex && val !== null && val !== undefined;
             },
-            align: 'right',
-            anchor: 'center',
+            align: 'top',
+            anchor: 'end',
             offset: 4,
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
