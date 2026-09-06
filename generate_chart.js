@@ -5,7 +5,7 @@ const GIFEncoder = require('gifencoder');
 const fs = require('fs');
 const path = require('path');
 
-// --- 1. ローカルフォントの登録（Noto Sans を排し、Open Sans Condensed に統一） ---
+// --- 1. ローカルフォントの登録 ---
 const fontLineBoldPath = path.join(__dirname, 'fonts', 'LINESeedJP-Bold.ttf');
 const fontOpenSansCondRegularPath = path.join(__dirname, 'fonts', 'OpenSans_Condensed-Regular.ttf');
 const fontOpenSansCondBoldPath = path.join(__dirname, 'fonts', 'OpenSans_Condensed-Bold.ttf');
@@ -38,15 +38,15 @@ const sourceTextPlugin = {
   afterDraw: (chart) => {
     const { ctx, chartArea, height } = chart;
     ctx.save();
-    
+
     ctx.font = 'bold 14px "LINE Seed JP"';
     ctx.fillStyle = '#999999';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    
+
     const x = chartArea.right;
     const y = height - 5;
-    
+
     ctx.fillText('出典: 気象庁', x, y);
     ctx.restore();
   }
@@ -153,15 +153,15 @@ for (let i = 1; i <= totalFrames; i++) {
     } else {
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
       const easedProgress = easeOutCubic(localProgress);
-      
+
       currentHourly.push(hourlyRain[j] * easedProgress);
-      
+
       if (easedProgress >= 0.75) {
         currentCumulative.push(cumulativeRain[j]);
       } else {
         currentCumulative.push(null);
       }
-      
+
       localProgresses.push(localProgress);
     }
   }
@@ -252,7 +252,6 @@ for (let i = 1; i <= totalFrames; i++) {
           yAxisID: 'y1',
           order: 3,
           datalabels: { display: false }
-          }
         }
       ]
     },
