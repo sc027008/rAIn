@@ -2,20 +2,24 @@ const { createCanvas, registerFont } = require('canvas');
 const { Chart } = require('chart.js/auto');
 const ChartDataLabels = require('chartjs-plugin-datalabels');
 const fs = require('fs');
+const path = require('path');
 
-// --- 1. フォントの登録 ---
-// Noto Sans（数字用）と LINE Seed JP（日本語用）をシステムから登録
-const fontNotoPath = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf';
-const fontLinePath = '/usr/share/fonts/truetype/line-seed/LINESeedJP_OTF_Bd.otf';
+// --- 1. フォントの登録 (run.yml で自動ダウンロードされたファイルを指定) ---
+const fontLineBoldPath = '/usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf';
+const fontNotoRegularPath = '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf';
+const fontNotoBoldPath = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf';
 
-if (fs.existsSync(fontNotoPath)) {
-  registerFont(fontNotoPath, { family: 'Noto Sans', weight: 'bold' });
+if (fs.existsSync(fontLineBoldPath)) {
+  registerFont(fontLineBoldPath, { family: 'LINE Seed JP', weight: 'bold' });
 }
-if (fs.existsSync(fontLinePath)) {
-  registerFont(fontLinePath, { family: 'LINE Seed JP', weight: 'bold' });
+if (fs.existsSync(fontNotoRegularPath)) {
+  registerFont(fontNotoRegularPath, { family: 'Noto Sans', weight: 'normal' });
+}
+if (fs.existsSync(fontNotoBoldPath)) {
+  registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
 }
 
-// --- 2. 引数の取得（Python側からパラメータ一括受取） ---
+// --- 2. 引数の取得 (Python側からJSON文字列を受取) ---
 const inputJson = process.argv[2];
 if (!inputJson) {
   console.error("エラー: グラフデータ(JSON)が渡されていません。");
@@ -32,8 +36,15 @@ const {
   stepY1,
   y2Max,
   stepY2,
+  titleText,
   outputPath
 } = params;
+
+// 出力先ディレクトリの自動作成
+const dir = path.dirname(outputPath);
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 // --- 3. Canvas の作成 ---
 const width = 600;
@@ -41,9 +52,8 @@ const height = 300;
 const canvas = createCanvas(width, height);
 const ctx = canvas.getContext('2d');
 
-// --- 4. Chart.js 設定（Python側 generate_chart_url と完全同期） ---
+// --- 4. Chart.js 設定構築 ---
 const datalabelDisplay = hourlyRain.map(val => val >= 0.5);
-const titleText = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 8 + "折れ線グラフ: 積算雨量 [mm]↓";
 
 const chartConfig = {
   type: 'bar',
@@ -65,7 +75,7 @@ const chartConfig = {
           align: 'end',
           offset: -2,
           color: '#111111',
-          // 数字のみの棒グラフラベル: Noto Sans
+          // 棒グラフの数値数値ラベル: Noto Sans (Bold)
           font: { size: 20, family: 'Noto Sans', weight: 'bold' },
           textStrokeColor: '#ffffff',
           textStrokeWidth: 4
@@ -117,7 +127,7 @@ const chartConfig = {
         display: true,
         text: titleText,
         color: '#111111',
-        // 日本語を含むタイトル: LINE Seed JP
+        // 日本語タイトル: LINE Seed JP (Bold)
         font: { size: 19, family: 'LINE Seed JP', weight: 'bold' },
         padding: 12
       },
@@ -132,13 +142,13 @@ const chartConfig = {
           display: true,
           text: '時間後',
           color: '#111111',
-          // 日本語を含むX軸タイトル: LINE Seed JP
+          // 日本語軸タイトル: LINE Seed JP (Bold)
           font: { size: 19, family: 'LINE Seed JP', weight: 'bold' }
         },
         ticks: {
           color: '#111111',
-          // 数字のみのX軸目盛り: Noto Sans
-          font: { size: 18, family: 'Noto Sans', weight: 'bold' },
+          // 数字目盛り: Noto Sans (Regular)
+          font: { size: 18, family: 'Noto Sans', weight: 'normal' },
           maxRotation: 0
         }
       },
@@ -150,8 +160,8 @@ const chartConfig = {
         ticks: {
           stepSize: stepY1,
           color: '#111111',
-          // 数字のみのY1軸目盛り: Noto Sans
-          font: { size: 19, family: 'Noto Sans', weight: 'bold' }
+          // 数字目盛り: Noto Sans (Regular)
+          font: { size: 19, family: 'Noto Sans', weight: 'normal' }
         },
         grid: { color: '#bdbdbd' },
         border: { dash: [2, 3] }
@@ -164,8 +174,8 @@ const chartConfig = {
         ticks: {
           stepSize: stepY2,
           color: '#111111',
-          // 数字のみのY2軸目盛り: Noto Sans
-          font: { size: 19, family: 'Noto Sans', weight: 'bold' }
+          // 数字目盛り: Noto Sans (Regular)
+          font: { size: 19, family: 'Noto Sans', weight: 'normal' }
         },
         grid: { drawOnChartArea: true, color: '#bdbdbd' },
         border: { dash: [2, 3] }
@@ -178,3 +188,4 @@ const chartConfig = {
 new Chart(ctx, chartConfig);
 const buffer = canvas.toBuffer('image/png');
 fs.writeFileSync(outputPath, buffer);
+console.log(`グラフ生成完了: ${outputPath}`);
