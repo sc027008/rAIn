@@ -212,7 +212,7 @@ def cleanup_old_charts(charts_dir="charts", retention_hours=168):
     now = datetime.now(jst)
 
     for filename in os.listdir(charts_dir):
-        if filename.startswith("chart_") and filename.endswith(".png"):
+        if filename.startswith("chart_") and (filename.endswith(".png") or filename.endswith(".gif")):
             file_path = os.path.join(charts_dir, filename)
             try:
                 # ファイルの最終更新日時を取得
