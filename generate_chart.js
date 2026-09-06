@@ -5,19 +5,19 @@ const GIFEncoder = require('gifencoder');
 const fs = require('fs');
 const path = require('path');
 
-// --- 1. ローカルフォントの登録 ---
+// --- 1. ローカルフォントの登録（Noto Sans を排し、Open Sans Condensed に統一） ---
 const fontLineBoldPath = path.join(__dirname, 'fonts', 'LINESeedJP-Bold.ttf');
-const fontNotoRegularPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
-const fontNotoBoldPath = path.join(__dirname, 'fonts', 'NotoSans-Bold.ttf');
+const fontOpenSansCondRegularPath = path.join(__dirname, 'fonts', 'OpenSans_Condensed-Regular.ttf');
+const fontOpenSansCondBoldPath = path.join(__dirname, 'fonts', 'OpenSans_Condensed-Bold.ttf');
 
 if (fs.existsSync(fontLineBoldPath)) {
   registerFont(fontLineBoldPath, { family: 'LINE Seed JP', weight: 'bold' });
 }
-if (fs.existsSync(fontNotoRegularPath)) {
-  registerFont(fontNotoRegularPath, { family: 'Noto Sans', weight: 'normal' });
+if (fs.existsSync(fontOpenSansCondRegularPath)) {
+  registerFont(fontOpenSansCondRegularPath, { family: 'Open Sans Condensed', weight: 'normal' });
 }
-if (fs.existsSync(fontNotoBoldPath)) {
-  registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
+if (fs.existsSync(fontOpenSansCondBoldPath)) {
+  registerFont(fontOpenSansCondBoldPath, { family: 'Open Sans Condensed', weight: 'bold' });
 }
 
 // --- 2. 背景を絶対に白にするカスタムプラグイン ---
@@ -36,18 +36,16 @@ const whiteBackgroundPlugin = {
 const sourceTextPlugin = {
   id: 'sourceText',
   afterDraw: (chart) => {
-    const { ctx, chartArea } = chart;
+    const { ctx, chartArea, height } = chart;
     ctx.save();
     
-    // フォントと色の設定
     ctx.font = 'bold 14px "LINE Seed JP"';
     ctx.fillStyle = '#999999';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     
-    // 描画位置：グラフエリアの右下から少し離した位置
     const x = chartArea.right;
-    const y = height - 5; // X軸ラベルの下あたり
+    const y = height - 5;
     
     ctx.fillText('出典: 気象庁', x, y);
     ctx.restore();
@@ -65,8 +63,7 @@ const customTitlePlugin = {
     ctx.textBaseline = 'top';
 
     const y = 8;
-    // 数字「10」「25」（19px Noto Sans）の実際の飛び出し幅
-    const labelOffset = 32;
+    const labelOffset = 10;
 
     // 1. 左タイトル：数字「10」の左端ラインに合わせる
     ctx.fillStyle = '#555555';
@@ -128,25 +125,24 @@ function easeOutCubic(t) {
 }
 
 // --- 5. 時系列アニメーション用フレーム生成処理 ---
-const totalFrames = 40; // フレーム数
+const totalFrames = 40;
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 最後のフレーム（完成形）は 15,000ms（15秒）表示
   if (i === totalFrames) {
     encoder.setDelay(15000);
   } else {
-    encoder.setDelay(50); // 1フレームの秒数 [ms]
+    encoder.setDelay(50);
   }
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-const globalProgress = i / totalFrames;
+  const globalProgress = i / totalFrames;
 
   const currentHourly = [];
   const currentCumulative = [];
-  const localProgresses = []; // ★【追加位置 1】配列の宣言を追加
+  const localProgresses = [];
 
   for (let j = 0; j < dataLength; j++) {
     const startThreshold = (j / dataLength) * 0.7;
@@ -158,21 +154,18 @@ const globalProgress = i / totalFrames;
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
       const easedProgress = easeOutCubic(localProgress);
       
-      // 棒グラフ：下から伸びるアニメーション（イージング適用）
       currentHourly.push(hourlyRain[j] * easedProgress);
       
-      // 折れ線グラフ：棒がある程度伸びたタイミングで実値を表示
       if (easedProgress >= 0.75) {
-        currentCumulative.push(cumulativeRain[j]); // 実値を表示
+        currentCumulative.push(cumulativeRain[j]);
       } else {
-        currentCumulative.push(null); // それまでは非表示
+        currentCumulative.push(null);
       }
       
       localProgresses.push(localProgress);
     }
   }
 
-  // ★【追加位置 4】datalabelDisplay の判定もこちらへ差し替え
   const datalabelDisplay = (context) => {
     const targetVal = hourlyRain[context.dataIndex];
     const progress = localProgresses[context.dataIndex];
@@ -187,22 +180,22 @@ const globalProgress = i / totalFrames;
         {
           type: 'line',
           label: '時間雨量ラベル用ダミー',
-          data: hourlyRain, // ★ 確定値の配列をそのまま渡す（これで途中の数値変動が消えます）
+          data: hourlyRain,
           borderColor: 'transparent',
           backgroundColor: 'transparent',
           pointRadius: 0,
           yAxisID: 'y1',
           order: 0,
           datalabels: {
-            display: datalabelDisplay, // ★ バーが82%伸びたタイミングで確定値を表示
+            display: datalabelDisplay,
             anchor: 'end',
             align: 'end',
             offset: -2,
             color: '#111111',
-            font: { size: 20, family: 'Noto Sans', weight: 'bold' },
+            font: { size: 20, family: 'Open Sans Condensed', weight: 'bold' },
             textStrokeColor: '#ffffff',
             textStrokeWidth: 4,
-            formatter: (value) => value // 端数処理不要でそのまま表示
+            formatter: (value) => value
           }
         },
         {
@@ -214,7 +207,7 @@ const globalProgress = i / totalFrames;
           pointRadius: 0,
           fill: true,
           backgroundColor: 'rgba(123, 31, 162, 0.08)',
-          spanGaps: false, // null 地点への描画をカットして左から伸びる表現にする
+          spanGaps: false,
           yAxisID: 'y2',
           order: 1,
           datalabels: { display: false }
@@ -272,7 +265,7 @@ const globalProgress = i / totalFrames;
           },
           ticks: {
             color: '#111111',
-            font: { size: 18, family: 'Noto Sans', weight: 'normal' },
+            font: { size: 18, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0
           }
         },
@@ -284,7 +277,7 @@ const globalProgress = i / totalFrames;
           ticks: {
             stepSize: stepY1,
             color: '#111111',
-            font: { size: 19, family: 'Noto Sans', weight: 'normal' }
+            font: { size: 19, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
@@ -297,7 +290,7 @@ const globalProgress = i / totalFrames;
           ticks: {
             stepSize: stepY2,
             color: '#7B1FA2',
-            font: { size: 19, family: 'Noto Sans', weight: 'normal' }
+            font: { size: 19, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
