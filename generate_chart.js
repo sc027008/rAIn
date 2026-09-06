@@ -226,7 +226,7 @@ for (let i = 1; i <= totalFrames; i++) {
             borderColor: 'rgba(255, 255, 255, 0.7)', // 透過70%の白枠
             borderWidth: 4,
             
-            borderRadius: 4,
+            borderRadius: 6,
             padding: { top: 3, bottom: 4, left: 6, right: 6 },
             font: {
               size: 22,
