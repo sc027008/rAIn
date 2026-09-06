@@ -224,12 +224,52 @@ def cleanup_old_charts(charts_dir="charts", retention_hours=168):
             except Exception as e:
                 print(f"画像削除エラー ({filename}): {e}")
 
+def push_chart_to_github(output_path, filename):
+    """
+    生成された画像ファイルを Git にコミット＆プッシュし、
+    CDN (raw.githubusercontent.com) に反映されるまで待機して URL を返します。
+    """
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    branch = os.environ.get("GITHUB_REF_NAME", "main")
+    if not repo or not os.path.exists(output_path):
+        return None
+
+    try:
+        # 1. Git コミット & プッシュを実行
+        subprocess.run(["git", "config", "--local", "user.name", "github-actions[bot]"], check=True)
+        subprocess.run(["git", "config", "--local", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+        subprocess.run(["git", "add", "-A", "state.json", "charts/"], check=True)
+        
+        # 変更がある場合のみコミット＆プッシュ
+        status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+        if status.stdout.strip():
+            subprocess.run(["git", "commit", "-m", f"Chore: Upload {filename} [skip ci]"], check=True)
+            subprocess.run(["git", "push"], check=True)
+            print(f"Git push 完了: {filename}")
+
+        # 2. git push 後に CDN 反映をポーリング確認（HTTP 200 になるまで最大 15 秒待機）
+        raw_url = f"https://raw.githubusercontent.com/{repo}/{branch}/charts/{filename}"
+        print("CDNへの画像反映を確認中...")
+        for _ in range(15):
+            try:
+                res = requests.head(raw_url, timeout=2)
+                if res.status_code == 200:
+                    print("CDN反映確認完了 (HTTP 200)")
+                    return raw_url
+            except Exception:
+                pass
+            time.sleep(1)
+
+        return raw_url
+
+    except Exception as e:
+        print(f"Git push または CDN確認エラー: {e}")
+        return None
+
 def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     """
-    generate_chart.js (Node.js/Chart.js) をローカル実行して PNG 画像を生成し、
-    GitHub raw URL (raw.githubusercontent.com) を返します。
+    generate_chart.js を実行して GIF を生成し、Git push 後に CDN 反映済み URL を返します。
     """
-    # 7日間（168時間）経過した古い画像を自動クリーンアップ
     cleanup_old_charts(retention_hours=168)
 
     all_rain = [current_rain_val] + hourly_rain_list
@@ -254,13 +294,11 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 
     title_text = "↓棒グラフ: 時間雨量[mm/h]" + " " * 8 + "折れ線グラフ: 積算雨量[mm]↓"
 
-    # キャッシュ事故を防ぐユニークファイル名 (.gif へ変更)
     jst = timezone(timedelta(hours=9))
     timestamp_str = datetime.now(jst).strftime("%Y%m%d_%H%M%S_%f")[:18]
     filename = f"chart_{timestamp_str}.gif"
     output_path = os.path.join("charts", filename)
 
-    # Node.js 側へ渡す構造化パラメータ JSON
     params = {
         "labels": labels,
         "hourlyRain": all_rain,
@@ -275,24 +313,22 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     }
 
     try:
-        # Node.js スクリプトを呼び出してローカルで PNG 生成
         cmd = ["node", "generate_chart.js", json.dumps(params)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         print("【Node.js 実行標準出力】:", result.stdout.strip())
 
-        # GITHUB_REPOSITORY 環境変数 (例: "owner/repo") から raw URL を自動生成
-        repo = os.environ.get("GITHUB_REPOSITORY")
-        if repo and os.path.exists(output_path):
-            return f"https://raw.githubusercontent.com/{repo}/main/charts/{filename}"
+        # ローカル生成後に Git push と CDN 200 確認を実行
+        uploaded_url = push_chart_to_github(output_path, filename)
+        if uploaded_url:
+            return uploaded_url
 
     except subprocess.CalledProcessError as e:
         print(f"【Node.js 実行エラー詳細】 ReturnCode: {e.returncode}")
-        print(f"【Node.js stdout】: {e.stdout}")
         print(f"【Node.js stderr】: {e.stderr}")
     except Exception as e:
         print(f"【予期せぬ例外】: {type(e).__name__} - {e}")
 
-    # フォールバック (万が一失敗した場合は従来の QuickChart URL を一時生成)
+    # フォールバック (QuickChart)
     chart_config = {
         "type": "bar",
         "data": {
