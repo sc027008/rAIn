@@ -243,6 +243,8 @@ def push_chart_to_github(output_path, filename):
         status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
         if status.stdout.strip():
             subprocess.run(["git", "commit", "-m", f"Chore: Upload {filename} [skip ci]"], check=True)
+            # push 前に最新情報を引き込んで競合を回避する
+            subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=True)
             subprocess.run(["git", "push"], check=True)
             print(f"Git push 完了: {filename}")
 
