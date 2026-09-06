@@ -67,16 +67,12 @@ jobs:
         run: |
           python main.py
 
-      - name: 状態(state.json)および生成画像の更新保存
+      - name: 残余状態(state.json)の更新保存
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 追加・変更・削除されたファイルを一括ステージング
-          git add -A state.json charts/ 2>/dev/null || true
-          if git status --porcelain | grep -qE "state.json|charts/"; then
-            git commit -m "Chore: Update state.json and cleanup charts [skip ci]"
+          git add state.json 2>/dev/null || true
+          if git status --porcelain | grep -q "state.json"; then
+            git commit -m "Chore: Update state.json [skip ci]"
             git push
-          else
-            echo "更新・削除対象のファイルはありません。"
           fi
