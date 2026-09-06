@@ -621,7 +621,7 @@ def main():
         
         formatted_text = (
             f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            f"<font color=\"#757575\">今後15時間積算 {cum_15h_int} mm</font>"
+            # f"<font color=\"#757575\">今後15時間積算 {cum_15h_int} mm</font>"
         )
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
