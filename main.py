@@ -167,7 +167,7 @@ def get_color_for_value(val):
 
 def get_nice_step(raw_max, steps=5):
     raw_step = raw_max / steps
-    nice_steps = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
+    nice_steps = [1, 2, 5, 10, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
     for n in nice_steps:
         if n >= raw_step:
             return n
@@ -195,7 +195,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
     y2_max = step_y2 * steps
 
-    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 6 + "折れ線グラフ: 積算雨量 [mm]↓"
+    title_text = "↓棒グラフ: 時間雨量 [mm/h]" + " " * 7 + "折れ線グラフ: 積算雨量 [mm]↓"
 
     chart_config = {
         "type": "bar",
