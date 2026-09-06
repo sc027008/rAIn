@@ -1,0 +1,10 @@
+{
+  "name": "rain-alert-chart-generator",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "chart.js": "^4.4.1",
+    "chartjs-plugin-datalabels": "^2.2.0"
+  }
+}
