@@ -240,27 +240,27 @@ def push_chart_to_github(output_path, filename):
         subprocess.run(["git", "config", "--local", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
         subprocess.run(["git", "add", "-A", "state.json", "charts/"], check=True)
         
-        # 変更がある場合のみコミット＆プッシュ
         status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
         if status.stdout.strip():
             subprocess.run(["git", "commit", "-m", f"Chore: Upload {filename} [skip ci]"], check=True)
             subprocess.run(["git", "push"], check=True)
             print(f"Git push 完了: {filename}")
 
-        # 2. git push 後に CDN 反映をポーリング確認（HTTP 200 になるまで最大 15 秒待機）
+        # 2. CDN 反映をポーリング確認 (最大 60 秒待機)
         raw_url = f"https://raw.githubusercontent.com/{repo}/{branch}/charts/{filename}"
         print("CDNへの画像反映を確認中...")
-        for _ in range(15):
+        for i in range(60):
             try:
-                res = requests.head(raw_url, timeout=2)
+                res = requests.head(raw_url, timeout=3)
                 if res.status_code == 200:
-                    print("CDN反映確認完了 (HTTP 200)")
+                    print(f"CDN反映確認完了 (HTTP 200 / {i+1}秒経過)")
                     return raw_url
             except Exception:
                 pass
             time.sleep(1)
 
-        return raw_url
+        print("警告: CDNへの反映が60秒以内に完了しなかったため、画像URLを破棄して通知のみ送信します。")
+        return None  # 404画像の送信によるカード空欄化を防ぐため None を返す
 
     except Exception as e:
         print(f"Git push または CDN確認エラー: {e}")
