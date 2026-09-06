@@ -216,19 +216,20 @@ for (let i = 1; i <= totalFrames; i++) {
               const val = context.dataset.data[context.dataIndex];
               return isLastIndex && val !== null && val !== undefined;
             },
-            align: 'top',
-            anchor: 'end',
-            offset: 4,
+            align: 'right',   // 真右を基準軸に固定
+            anchor: 'end',    // データポイントの外側端
+            offset: 4,        // 右方向への距離
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
             borderRadius: 4,
-            padding: { top: 3, bottom: 3, left: 6, right: 6 },
+            // ★ bottomを大きくすることで、文字と背景バッジ全体を「上」へ持ち上げる
+            padding: { top: 3, bottom: 12, left: 6, right: 6 },
             font: {
               size: 22,
               family: 'Open Sans Condensed Bold',
               weight: 'bold'
             },
-            formatter: (value) => Math.round(value) // ★ 整数に四捨五入する場合
+            formatter: (value) => Math.round(value)
           }
         },
         {
