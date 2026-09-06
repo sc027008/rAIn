@@ -247,19 +247,23 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         "outputPath": output_path
     }
 
-    try:
+try:
         # Node.js スクリプトを呼び出してローカルで PNG 生成
         cmd = ["node", "generate_chart.js", json.dumps(params)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(result.stdout.strip())
+        print("【Node.js 実行標準出力】:", result.stdout.strip())
 
         # GITHUB_REPOSITORY 環境変数 (例: "owner/repo") から raw URL を自動生成
         repo = os.environ.get("GITHUB_REPOSITORY")
         if repo and os.path.exists(output_path):
             return f"https://raw.githubusercontent.com/{repo}/main/charts/{filename}"
 
+    except subprocess.CalledProcessError as e:
+        print(f"【Node.js 実行エラー詳細】 ReturnCode: {e.returncode}")
+        print(f"【Node.js stdout】: {e.stdout}")
+        print(f"【Node.js stderr】: {e.stderr}")
     except Exception as e:
-        print(f"ローカルグラフ画像生成エラー: {e}")
+        print(f"【予期せぬ例外】: {type(e).__name__} - {e}")
 
     # フォールバック (万が一失敗した場合は従来の QuickChart URL を一時生成)
     chart_config = {
