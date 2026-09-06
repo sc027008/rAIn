@@ -218,7 +218,7 @@ for (let i = 1; i <= totalFrames; i++) {
             },
             align: 0,
             anchor: 'center',
-            offset: 8,
+            offset: 6,
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
             
