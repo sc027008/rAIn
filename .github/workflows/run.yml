@@ -1,6 +1,7 @@
 name: Rain Alert Runner
 
 on:
+  # GAS（Google Apps Script）等からの外部APIリクエストによる手動/自動起動のみに一本化
   workflow_dispatch:
 
 permissions:
@@ -23,16 +24,9 @@ jobs:
         with:
           node-version: '20'
 
-      - name: システム依存関係（canvas描画ライブラリ & フォント）の自動インストール
+      - name: フォント（LINE Seed JP & Noto Sans）の確実な自動インストール
         run: |
-          sudo apt-get update && sudo apt-get install -y \
-            curl \
-            build-essential \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libjpeg-dev \
-            giflib-tools \
-            librsvg2-dev
+          sudo apt-get update && sudo apt-get install -y curl
           
           sudo mkdir -p /usr/share/fonts/truetype/line-seed
           sudo mkdir -p /usr/share/fonts/truetype/noto
@@ -41,32 +35,35 @@ jobs:
 
           # 1. LINE Seed JP (700)
           URL_LINE=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@700&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "LINE Seed JP URL: $URL_LINE"
           sudo curl -sS -L -o /usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf "$URL_LINE"
 
           # 2. Noto Sans (400)
           URL_NOTO_REG=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "Noto Sans Regular URL: $URL_NOTO_REG"
           sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$URL_NOTO_REG"
 
           # 3. Noto Sans (700)
           URL_NOTO_BOLD=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@700&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "Noto Sans Bold URL: $URL_NOTO_BOLD"
           sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Bold.ttf "$URL_NOTO_BOLD"
 
           sudo fc-cache -fv
 
-      - name: Node.js 依存ライブラリのインストール & package-lock.json 自動生成
+      - name: Node.js 依存ライブラリのインストール & Lockファイル自動生成
         run: |
           if [ ! -f package-lock.json ]; then
             npm install
             git config --local user.name "github-actions[bot]"
             git config --local user.email "github-actions[bot]@users.noreply.github.com"
             git add package-lock.json
-            git commit -m "Chore: Auto-generate package-lock.json [skip ci]"
-            git push
+            git commit -m "Chore: Add package-lock.json [skip ci]" || true
+            git push || true
           else
             npm ci || npm install
           fi
 
-      - name: 必要なPythonライブラリのインストール
+      - name: 必要なライブラリのインストール
         run: |
           pip install requests Pillow pandas jpholiday
 
@@ -82,6 +79,7 @@ jobs:
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main --rebase || true
           git add state.json 2>/dev/null || true
           if git status --porcelain | grep -q "state.json"; then
             git commit -m "Chore: Update state.json [skip ci]"
