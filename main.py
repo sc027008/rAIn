@@ -293,7 +293,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     step_y1 = get_nice_step(max(max_bar * 1.35, 10.0), steps)
     y1_max = step_y1 * steps
 
-    step_y2 = get_nice_step(max(max_cum * 1.15, 10.0), steps)
+    step_y2 = get_nice_step(max(max_cum * 1.01, 10.0), steps)
     y2_max = step_y2 * steps
 
     title_text = "▼\u2009棒: 時間雨量 mm/h" + " " * 17 + "折れ線: 積算雨量 mm\u2009▼"
