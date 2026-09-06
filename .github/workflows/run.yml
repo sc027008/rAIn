@@ -59,7 +59,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin main --rebase || true
-          git add state.json 2>/devnull || true
+          git add state.json 2>/dev/null || true
           if git status --porcelain | grep -q "state.json"; then
             git commit -m "Chore: Update state.json [skip ci]"
             git push
