@@ -200,11 +200,38 @@ def get_nice_step(raw_max, steps=5):
             return n
     return math.ceil(raw_step)
 
+def cleanup_old_charts(charts_dir="charts", retention_hours=168):
+    """
+    charts/ ディレクトリ内をスキャンし、指定保持時間(デフォルト168時間 = 7日間)を過ぎた
+    古いグラフPNG画像を自動削除します。
+    """
+    if not os.path.exists(charts_dir):
+        return
+
+    jst = timezone(timedelta(hours=9))
+    now = datetime.now(jst)
+
+    for filename in os.listdir(charts_dir):
+        if filename.startswith("chart_") and filename.endswith(".png"):
+            file_path = os.path.join(charts_dir, filename)
+            try:
+                # ファイルの最終更新日時を取得
+                mtime = datetime.fromtimestamp(os.path.getmtime(file_path), tz=jst)
+                # 168時間（7日間）以上経過している場合は削除
+                if (now - mtime).total_seconds() > (retention_hours * 3600):
+                    os.remove(file_path)
+                    print(f"古いグラフ画像を削除しました: {filename}")
+            except Exception as e:
+                print(f"画像削除エラー ({filename}): {e}")
+
 def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     """
     generate_chart.js (Node.js/Chart.js) をローカル実行して PNG 画像を生成し、
     GitHub raw URL (raw.githubusercontent.com) を返します。
     """
+    # 7日間（168時間）経過した古い画像を自動クリーンアップ
+    cleanup_old_charts(retention_hours=168)
+
     all_rain = [current_rain_val] + hourly_rain_list
     labels = [str(i) for i in range(len(all_rain))]
     bar_colors = [get_color_for_value(val) for val in all_rain]
