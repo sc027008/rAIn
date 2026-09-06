@@ -58,27 +58,25 @@ const sourceTextPlugin = {
 const customTitlePlugin = {
   id: 'customTitle',
   afterDraw: (chart) => {
-    const { ctx, scales } = chart;
+    const { ctx, chartArea } = chart;
     ctx.save();
 
     ctx.font = 'bold 21px "LINE Seed JP"';
     ctx.textBaseline = 'top';
 
     const y = 8;
+    // 数字「10」「25」（19px Noto Sans）の実際の飛び出し幅
+    const labelOffset = 16;
 
-    // 1. 左側タイトル：Y1軸（左数字）の左端ラインに揃える
-    if (scales.y1) {
-      ctx.fillStyle = '#555555';
-      ctx.textAlign = 'left';
-      ctx.fillText('▼\u2009棒: 時間雨量 mm/h', scales.y1.left, y);
-    }
+    // 1. 左タイトル：数字「10」の左端ラインに合わせる
+    ctx.fillStyle = '#555555';
+    ctx.textAlign = 'left';
+    ctx.fillText('▼\u2009棒: 時間雨量 mm/h', chartArea.left - labelOffset, y);
 
-    // 2. 右側タイトル：Y2軸（右数字）の右端ラインに揃える
-    if (scales.y2) {
-      ctx.fillStyle = '#7B1FA2';
-      ctx.textAlign = 'right';
-      ctx.fillText('折れ線: 積算雨量 mm\u2009▼', scales.y2.left + scales.y2.width, y);
-    }
+    // 2. 右タイトル：数字「25」の右端ラインに合わせる
+    ctx.fillStyle = '#7B1FA2';
+    ctx.textAlign = 'right';
+    ctx.fillText('折れ線: 積算雨量 mm\u2009▼', chartArea.right + labelOffset, y);
 
     ctx.restore();
   }
