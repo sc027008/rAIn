@@ -92,28 +92,31 @@ for (let i = 1; i <= totalFrames; i++) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-  const globalProgress = i / totalFrames;
+const globalProgress = i / totalFrames;
 
   const currentHourly = [];
   const currentCumulative = [];
+  const localProgresses = []; // ★【追加位置 1】配列の宣言を追加
 
   for (let j = 0; j < dataLength; j++) {
     const startThreshold = (j / dataLength) * 0.7;
     if (globalProgress <= startThreshold) {
       currentHourly.push(0);
       currentCumulative.push(null);
+      localProgresses.push(0); // ★【追加位置 2】未開始時は 0 を追加
     } else {
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
       currentHourly.push(hourlyRain[j] * easeOutCubic(localProgress));
       currentCumulative.push(cumulativeRain[j]);
+      localProgresses.push(localProgress); // ★【追加位置 3】計算した進捗率(0.0〜1.0)を追加
     }
   }
 
-  // バーが目標の 82% 以上伸び切ったタイミングで数値ラベルを表示
+  // ★【追加位置 4】datalabelDisplay の判定もこちらへ差し替え
   const datalabelDisplay = (context) => {
     const targetVal = hourlyRain[context.dataIndex];
-    const currentVal = currentHourly[context.dataIndex];
-    return targetVal >0 && currentVal >= (targetVal * 0.82);
+    const progress = localProgresses[context.dataIndex];
+    return targetVal > 0 && progress >= 0.8;
   };
 
   const chartConfig = {
