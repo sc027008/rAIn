@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # cache: 'npm'
 
       - name: フォント（LINE Seed JP & Noto Sans）の確実な自動インストール
         run: |
