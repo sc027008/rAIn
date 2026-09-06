@@ -124,21 +124,22 @@ for (let i = 1; i <= totalFrames; i++) {
         {
           type: 'line',
           label: '時間雨量ラベル用ダミー',
-          data: currentHourly,
+          data: hourlyRain, // ★ 確定値の配列をそのまま渡す（これで途中の数値変動が消えます）
           borderColor: 'transparent',
           backgroundColor: 'transparent',
           pointRadius: 0,
           yAxisID: 'y1',
           order: 0,
           datalabels: {
-            display: datalabelDisplay, // 進捗率判定関数を割り当て
+            display: datalabelDisplay, // ★ バーが80%伸びたタイミングで確定値を表示
             anchor: 'end',
             align: 'end',
             offset: -2,
             color: '#111111',
             font: { size: 20, family: 'Noto Sans', weight: 'bold' },
             textStrokeColor: '#ffffff',
-            textStrokeWidth: 4
+            textStrokeWidth: 4,
+            formatter: (value) => value // 端数処理不要でそのまま表示
           }
         },
         {
