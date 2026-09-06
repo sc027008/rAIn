@@ -531,6 +531,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=ZOOM_LE
 def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
     """Google Chat Webhook API を利用して、カード形式（CardsV2）の通知メッセージを送信します。"""
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
+    activated_sludge_url = os.environ.get("ACTIVATED_SLUDGE_URL")
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
     widgets = [{"textParagraph": {"text": formatted_text}}]
@@ -546,11 +547,18 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         
     widgets.append({
         "buttonList": {
-            "buttons": [{
-                "text": "<b>🌧️雨雲レーダー</b>を開く",
-                "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
-                "onClick": {"openLink": {"url": jma_url}}
-            }]
+            "buttons": [
+                {
+                    "text": "<b>🌧️雨雲レーダー</b>を開く",
+                    "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
+                    "onClick": {"openLink": {"url": jma_url}}
+                },
+                {
+                    "text": "活性汚泥　見えるか？",
+                    "color": {"red": 0.90, "green": 0.95, "blue": 0.88, "alpha": 1.0},
+                    "onClick": {"openLink": {"url": activated_sludge_url}}
+                }
+            ]
         }
     })
     
