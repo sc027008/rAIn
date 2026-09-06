@@ -106,12 +106,17 @@ const globalProgress = i / totalFrames;
       localProgresses.push(0);
     } else {
       const localProgress = Math.min(1.0, (globalProgress - startThreshold) / 0.3);
+      const easedProgress = easeOutCubic(localProgress);
       
-      // 棒グラフ（イージング適用）
-      currentHourly.push(hourlyRain[j] * easeOutCubic(localProgress));
+      // 棒グラフ：下から伸びるアニメーション（イージング適用）
+      currentHourly.push(hourlyRain[j] * easedProgress);
       
-      // ★ 折れ線グラフ（棒グラフと同じイージングを適用して速度を完全同期）
-      currentCumulative.push(cumulativeRain[j] * easeOutCubic(localProgress));
+      // 折れ線グラフ：上下移動は行わず、棒グラフの減速カーブに合わせて「点」を実値のまま出現させる
+      if (easedProgress >= 0.1) {
+        currentCumulative.push(cumulativeRain[j]); // 実値をそのまま保持（上下に動かない）
+      } else {
+        currentCumulative.push(null); // 棒が少し伸び始めるまでは非表示
+      }
       
       localProgresses.push(localProgress);
     }
