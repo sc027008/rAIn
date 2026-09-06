@@ -109,11 +109,11 @@ for (let i = 1; i <= totalFrames; i++) {
     }
   }
 
-  // バーが目標の 85% 以上伸び切ったタイミングで数値ラベルを表示
+  // バーが目標の 82% 以上伸び切ったタイミングで数値ラベルを表示
   const datalabelDisplay = (context) => {
     const targetVal = hourlyRain[context.dataIndex];
     const currentVal = currentHourly[context.dataIndex];
-    return targetVal >0 && currentVal >= (targetVal * 0.85);
+    return targetVal >0 && currentVal >= (targetVal * 0.82);
   };
 
   const chartConfig = {
@@ -131,7 +131,7 @@ for (let i = 1; i <= totalFrames; i++) {
           yAxisID: 'y1',
           order: 0,
           datalabels: {
-            display: datalabelDisplay, // ★ バーが80%伸びたタイミングで確定値を表示
+            display: datalabelDisplay, // ★ バーが82%伸びたタイミングで確定値を表示
             anchor: 'end',
             align: 'end',
             offset: -2,
