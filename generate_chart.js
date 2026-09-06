@@ -78,7 +78,7 @@ function easeOutCubic(t) {
 }
 
 // --- 5. 時系列アニメーション用フレーム生成処理 ---
-const totalFrames = 30; // 15 から 20 フレームへ変更 (全体のアニメーションをより滑らか・低速化)
+const totalFrames = 25; // 15 から 25 フレームへ変更 (全体のアニメーションをより滑らか・低速化)
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
@@ -109,11 +109,11 @@ for (let i = 1; i <= totalFrames; i++) {
     }
   }
 
-  // バーが目標の 80% 以上伸び切ったタイミングで数値ラベルを表示
+  // バーが目標の 90% 以上伸び切ったタイミングで数値ラベルを表示
   const datalabelDisplay = (context) => {
     const targetVal = hourlyRain[context.dataIndex];
     const currentVal = currentHourly[context.dataIndex];
-    return targetVal >0 && currentVal >= (targetVal * 0.95);
+    return targetVal >0 && currentVal >= (targetVal * 0.9);
   };
 
   const chartConfig = {
