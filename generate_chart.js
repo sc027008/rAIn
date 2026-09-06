@@ -5,17 +5,21 @@ const GIFEncoder = require('gifencoder');
 const fs = require('fs');
 const path = require('path');
 
-// --- 1. フォント登録 ---
-const fontLineBoldPath = '/usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf';
-const fontNotoRegularPath = '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf';
-const fontNotoBoldPath = '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf';
+// --- 1. ローカルフォントの登録 ---
+const fontLineBoldPath = path.join(__dirname, 'fonts', 'LINESeedJP-Bold.ttf');
+const fontNotoRegularPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
+const fontNotoBoldPath = path.join(__dirname, 'fonts', 'NotoSans-Bold.ttf');
 
 if (fs.existsSync(fontLineBoldPath)) {
   registerFont(fontLineBoldPath, { family: 'LINE Seed JP', weight: 'bold' });
+} else {
+  console.warn(`警告: フォントが見つかりません: ${fontLineBoldPath}`);
 }
+
 if (fs.existsSync(fontNotoRegularPath)) {
   registerFont(fontNotoRegularPath, { family: 'Noto Sans', weight: 'normal' });
 }
+
 if (fs.existsSync(fontNotoBoldPath)) {
   registerFont(fontNotoBoldPath, { family: 'Noto Sans', weight: 'bold' });
 }
