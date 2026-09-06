@@ -42,7 +42,7 @@ jobs:
 
       - name: 必要なライブラリのインストール
         run: |
-          pip install requests Pillow pandas jpholiday
+          pip install -r requirements.txt
 
       - name: 雨量チェックプログラムの実行
         env:
