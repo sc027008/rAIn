@@ -19,6 +19,44 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Node.js環境のセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: フォント（LINE Seed JP & Noto Sans）の確実な自動インストール
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl
+          
+          sudo mkdir -p /usr/share/fonts/truetype/line-seed
+          sudo mkdir -p /usr/share/fonts/truetype/noto
+
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+          
+          # 1. LINE Seed JP (Bold: 700) の取得と配置
+          LINE_SEED_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@700&display=swap" | grep -o "https://[^\"]*" | head -n 1)
+          if [ -n "$LINE_SEED_URL" ]; then
+            sudo curl -sS -L -o /usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf "$LINE_SEED_URL"
+          fi
+
+          # 2. Noto Sans (Regular: 400 & Bold: 700) の取得と配置
+          NOTO_REGULAR_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400&display=swap" | grep -o "https://[^\"]*" | head -n 1)
+          if [ -n "$NOTO_REGULAR_URL" ]; then
+            sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$NOTO_REGULAR_URL"
+          fi
+
+          NOTO_BOLD_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@700&display=swap" | grep -o "https://[^\"]*" | head -n 1)
+          if [ -n "$NOTO_BOLD_URL" ]; then
+            sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Bold.ttf "$NOTO_BOLD_URL"
+          fi
+
+          sudo fc-cache -fv
+
+      - name: Node.js 依存ライブラリのインストール
+        run: |
+          npm ci || npm install
+
       - name: 必要なライブラリのインストール
         run: |
           pip install requests Pillow pandas jpholiday
@@ -31,14 +69,15 @@ jobs:
         run: |
           python main.py
 
-      - name: 状態(state.json)の更新保存
+      - name: 状態(state.json)および生成画像の更新保存
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           
-          if git status --porcelain | grep -q "state.json"; then
-            git add state.json
-            git commit -m "Chore: Update state.json [skip ci]"
+          # state.json または charts/ ディレクトリ内に変更があればコミット
+          git add state.json charts/ 2>/dev/null || true
+          if git status --porcelain | grep -qE "state.json|charts/"; then
+            git commit -m "Chore: Update state.json and generated charts [skip ci]"
             git push
           else
             echo "state.json に変更はありません。"
