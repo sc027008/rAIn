@@ -33,23 +33,21 @@ jobs:
           sudo mkdir -p /usr/share/fonts/truetype/noto
 
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-          
-          # 1. LINE Seed JP (Bold: 700) の取得と配置
-          LINE_SEED_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@700&display=swap" | grep -o "https://[^\"]*" | head -n 1)
-          if [ -n "$LINE_SEED_URL" ]; then
-            sudo curl -sS -L -o /usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf "$LINE_SEED_URL"
-          fi
 
-          # 2. Noto Sans (Regular: 400 & Bold: 700) の取得と配置
-          NOTO_REGULAR_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400&display=swap" | grep -o "https://[^\"]*" | head -n 1)
-          if [ -n "$NOTO_REGULAR_URL" ]; then
-            sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$NOTO_REGULAR_URL"
-          fi
+          # 1. LINE Seed JP (700)
+          URL_LINE=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@700&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "LINE Seed JP URL: $URL_LINE"
+          sudo curl -sS -L -o /usr/share/fonts/truetype/line-seed/LINESeedJP-Bold.ttf "$URL_LINE"
 
-          NOTO_BOLD_URL=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@700&display=swap" | grep -o "https://[^\"]*" | head -n 1)
-          if [ -n "$NOTO_BOLD_URL" ]; then
-            sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Bold.ttf "$NOTO_BOLD_URL"
-          fi
+          # 2. Noto Sans (400)
+          URL_NOTO_REG=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "Noto Sans Regular URL: $URL_NOTO_REG"
+          sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$URL_NOTO_REG"
+
+          # 3. Noto Sans (700)
+          URL_NOTO_BOLD=$(curl -s -A "$UA" "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@700&display=swap" | grep -o "src: url([^)]*)" | sed -E "s/src: url\(['\"]?([^'\"]+)['\"]?\)/\1/")
+          echo "Noto Sans Bold URL: $URL_NOTO_BOLD"
+          sudo curl -sS -L -o /usr/share/fonts/truetype/noto/NotoSans-Bold.ttf "$URL_NOTO_BOLD"
 
           sudo fc-cache -fv
 
