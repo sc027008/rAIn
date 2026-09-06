@@ -40,7 +40,7 @@ const sourceTextPlugin = {
     ctx.save();
     
     // フォントと色の設定
-    ctx.font = 'bold 15px "LINE Seed JP"';
+    ctx.font = 'bold 14px "LINE Seed JP"';
     ctx.fillStyle = '#999999';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
