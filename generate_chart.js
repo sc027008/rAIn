@@ -111,8 +111,8 @@ const globalProgress = i / totalFrames;
       // 棒グラフ：下から伸びるアニメーション（イージング適用）
       currentHourly.push(hourlyRain[j] * easedProgress);
       
-      // 折れ線グラフ：棒がある程度伸びた(0.7)タイミングで実値を表示
-      if (easedProgress >= 0.7) {
+      // 折れ線グラフ：棒がある程度伸びたタイミングで実値を表示
+      if (easedProgress >= 0.8) {
         currentCumulative.push(cumulativeRain[j]); // 実値を表示
       } else {
         currentCumulative.push(null); // それまでは非表示
