@@ -258,7 +258,7 @@ const globalProgress = i / totalFrames;
             font: { size: 19, family: 'Noto Sans', weight: 'normal' }
           },
           grid: { color: '#bdbdbd' },
-          border: { display: false, dash: [2, 3] }
+          border: { display: false, dash: [3, 4] }
         },
         y2: {
           type: 'linear',
@@ -271,7 +271,7 @@ const globalProgress = i / totalFrames;
             font: { size: 19, family: 'Noto Sans', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
-          border: { display: false, dash: [2, 3] }
+          border: { display: false, dash: [3, 4] }
         }
       }
     }
