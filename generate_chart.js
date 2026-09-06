@@ -266,7 +266,8 @@ for (let i = 1; i <= totalFrames; i++) {
           ticks: {
             color: '#111111',
             font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
-            maxRotation: 0
+            maxRotation: 0,
+            padding: -2
           }
         },
         y1: {
