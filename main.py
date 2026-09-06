@@ -549,7 +549,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "<b>雨雲レーダー</b>を開く🌧️",
+                    "text": "<b>雨雲レーダー</b>を見る🌧️",
                     "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
                     "onClick": {"openLink": {"url": jma_url}}
                 },
@@ -770,7 +770,7 @@ if __name__ == "__main__":
     # ---------------------------------------------------------
     
     # 【本番運用モード】（時間・曜日ガードあり）
-    # main()
+    main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信）
-    test_forced_notification()
+    # test_forced_notification()
