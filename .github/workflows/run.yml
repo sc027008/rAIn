@@ -1,9 +1,7 @@
 name: Rain Alert Runner
 
 on:
-  schedule:
-    # JST 8:00〜19:00 (UTC 23:00 および 0:00〜10:00) の間、5分おき（2分、7分、12分...）に実行
-    - cron: '2-57/5 23,0-10 * * *'
+  # GAS（Google Apps Script）等からの外部APIリクエストによる手動/自動起動のみに一本化
   workflow_dispatch:
 
 permissions:
