@@ -194,7 +194,7 @@ for (let i = 1; i <= totalFrames; i++) {
             color: '#111111',
             font: { size: 22, family: 'Open Sans Condensed Bold', weight: 'bold' },
             textStrokeColor: '#ffffff',
-            textStrokeWidth: 4,
+            textStrokeWidth: 6,
             formatter: (value) => value
           }
         },
