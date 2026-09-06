@@ -54,6 +54,34 @@ const sourceTextPlugin = {
   }
 };
 
+// --- タイトル左右同期カスタムプラグイン ---
+const customTitlePlugin = {
+  id: 'customTitle',
+  afterDraw: (chart) => {
+    const { ctx, chartArea } = chart;
+    ctx.save();
+
+    ctx.font = 'bold 21px "LINE Seed JP"';
+    ctx.textBaseline = 'top';
+
+    const y = 10; // 上部マージン位置
+
+    // 1. 左側タイトル：時間雨量（黒/濃いグレー）
+    ctx.fillStyle = '#555555';
+    ctx.textAlign = 'left';
+    // Y1軸（左枠線）の真上に配置
+    ctx.fillText('▼\u2009棒: 時間雨量 mm/h', chartArea.left, y);
+
+    // 2. 右側タイトル：積算雨量（折れ線と同じ紫色）
+    ctx.fillStyle = '#7B1FA2';
+    ctx.textAlign = 'right';
+    // Y2軸（右枠線）の真上に配置
+    ctx.fillText('折れ線: 積算雨量 mm\u2009▼', chartArea.right, y);
+
+    ctx.restore();
+  }
+};
+
 // --- 3. 引数の取得 ---
 const inputJson = process.argv[2];
 if (!inputJson) {
@@ -216,18 +244,13 @@ const globalProgress = i / totalFrames;
         }
       ]
     },
-    plugins: [ChartDataLabels, whiteBackgroundPlugin, sourceTextPlugin],
+    plugins: [ChartDataLabels, whiteBackgroundPlugin, sourceTextPlugin, customTitlePlugin],
     options: {
       animation: false,
       responsive: false,
       plugins: {
-        title: {
-          display: true,
-          text: titleText,
-          color: '#555555',
-          font: { size: 21, family: 'LINE Seed JP', weight: 'bold' },
-          padding: 12
-        },
+        // ★ 標準タイトルをオフにする
+        title: { display: false },
         legend: { display: false },
         datalabels: { display: true }
       },
