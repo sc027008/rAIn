@@ -247,7 +247,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
         "outputPath": output_path
     }
 
-try:
+    try:
         # Node.js スクリプトを呼び出してローカルで PNG 生成
         cmd = ["node", "generate_chart.js", json.dumps(params)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
