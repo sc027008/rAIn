@@ -203,7 +203,7 @@ const globalProgress = i / totalFrames;
           display: true,
           text: titleText,
           color: '#111111',
-          font: { size: 19, family: '"Noto Sans", "LINE Seed JP"', weight: 'bold' },
+          font: { size: 19, family: 'LINE Seed JP', weight: 'bold' },
           padding: 12
         },
         legend: { display: false },
