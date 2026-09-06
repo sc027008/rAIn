@@ -63,7 +63,7 @@ const customTitlePlugin = {
     ctx.textBaseline = 'top';
 
     const y = 8;
-    const labelOffset = 10;
+    const labelOffset = 32;
 
     // 1. 左タイトル：数字「10」の左端ラインに合わせる
     ctx.fillStyle = '#555555';
@@ -265,7 +265,7 @@ for (let i = 1; i <= totalFrames; i++) {
           },
           ticks: {
             color: '#111111',
-            font: { size: 22, family: 'Open Sans Condensed', weight: 'normal' },
+            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0
           }
         },
@@ -277,7 +277,7 @@ for (let i = 1; i <= totalFrames; i++) {
           ticks: {
             stepSize: stepY1,
             color: '#111111',
-            font: { size: 22, family: 'Open Sans Condensed', weight: 'normal' }
+            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
@@ -290,7 +290,7 @@ for (let i = 1; i <= totalFrames; i++) {
           ticks: {
             stepSize: stepY2,
             color: '#7B1FA2',
-            font: { size: 22, family: 'Open Sans Condensed', weight: 'normal' }
+            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
