@@ -254,10 +254,10 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
 
     title_text = "↓棒グラフ: 時間雨量[mm/h]" + " " * 8 + "折れ線グラフ: 積算雨量[mm]↓"
 
-    # キャッシュ事故を防ぐユニークファイル名 (ミリ秒タイムスタンプ + ランダム文字列)
+    # キャッシュ事故を防ぐユニークファイル名 (.gif へ変更)
     jst = timezone(timedelta(hours=9))
     timestamp_str = datetime.now(jst).strftime("%Y%m%d_%H%M%S_%f")[:18]
-    filename = f"chart_{timestamp_str}.png"
+    filename = f"chart_{timestamp_str}.gif"
     output_path = os.path.join("charts", filename)
 
     # Node.js 側へ渡す構造化パラメータ JSON
