@@ -67,7 +67,7 @@ const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
 
 encoder.start();
-encoder.setRepeat(-1); // 1回だけ再生して静止
+encoder.setRepeat(0); // 無限ループ
 encoder.setQuality(10);
 
 const canvas = createCanvas(width, height);
@@ -78,15 +78,15 @@ function easeOutCubic(t) {
 }
 
 // --- 5. 時系列アニメーション用フレーム生成処理 ---
-const totalFrames = 60; // フレーム数
+const totalFrames = 40; // フレーム数
 const dataLength = hourlyRain.length;
 
 for (let i = 1; i <= totalFrames; i++) {
-  // 最後の20フレーム目（完成形）は 20,000ms（20秒間）表示
+  // 最後のフレーム（完成形）は 15,000ms（15秒）表示
   if (i === totalFrames) {
-    encoder.setDelay(20000);
+    encoder.setDelay(15000);
   } else {
-    encoder.setDelay(34); // 1フレームの秒数 [ms]
+    encoder.setDelay(50); // 1フレームの秒数 [ms]
   }
 
   ctx.fillStyle = '#ffffff';
