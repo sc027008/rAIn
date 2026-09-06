@@ -259,7 +259,7 @@ for (let i = 1; i <= totalFrames; i++) {
           grid: { display: false },
           title: {
             display: true,
-            text: '時間後',
+            text: '時\u200A間\u200A後',
             color: '#555555',
             font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
           },
