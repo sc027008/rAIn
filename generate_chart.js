@@ -224,8 +224,8 @@ const globalProgress = i / totalFrames;
         title: {
           display: true,
           text: titleText,
-          color: '#111111',
-          font: { size: 19, family: 'LINE Seed JP', weight: 'bold' },
+          color: '#333333',
+          font: { size: 20, family: 'LINE Seed JP', weight: 'bold' },
           padding: 12
         },
         legend: { display: false },
@@ -238,8 +238,8 @@ const globalProgress = i / totalFrames;
           title: {
             display: true,
             text: '時間後',
-            color: '#111111',
-            font: { size: 19, family: 'LINE Seed JP', weight: 'bold' }
+            color: '#333333',
+            font: { size: 20, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
             color: '#111111',
