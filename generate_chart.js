@@ -224,7 +224,7 @@ for (let i = 1; i <= totalFrames; i++) {
             
             // ★ RGBA 形式で 透過度（アルファ値 0.0 〜 1.0）を指定可能
             borderColor: 'rgba(255, 255, 255, 0.7)', // 透過70%の白枠
-            borderWidth: 4,
+            borderWidth: 6,
             
             borderRadius: 6,
             padding: { top: 3, bottom: 4, left: 6, right: 6 },
