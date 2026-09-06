@@ -32,6 +32,28 @@ const whiteBackgroundPlugin = {
   }
 };
 
+// --- 出典表示用カスタムプラグイン ---
+const sourceTextPlugin = {
+  id: 'sourceText',
+  afterDraw: (chart) => {
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    
+    // フォントと色の設定
+    ctx.font = 'bold 16px "LINE Seed JP"';
+    ctx.fillStyle = '#666666'; // 主張しすぎないダークグレー
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    
+    // 描画位置：グラフエリアの右下から少し離した位置
+    const x = chartArea.right;
+    const y = chartArea.bottom + 22; // X軸ラベルの下あたり
+    
+    ctx.fillText('出典：気象庁', x, y);
+    ctx.restore();
+  }
+};
+
 // --- 3. 引数の取得 ---
 const inputJson = process.argv[2];
 if (!inputJson) {
@@ -194,7 +216,7 @@ const globalProgress = i / totalFrames;
         }
       ]
     },
-    plugins: [ChartDataLabels, whiteBackgroundPlugin],
+    plugins: [ChartDataLabels, whiteBackgroundPlugin, sourceTextPlugin],
     options: {
       animation: false,
       responsive: false,
