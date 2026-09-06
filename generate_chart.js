@@ -216,15 +216,18 @@ for (let i = 1; i <= totalFrames; i++) {
               const val = context.dataset.data[context.dataIndex];
               return isLastIndex && val !== null && val !== undefined;
             },
-            align: 315,   // 右上
-            anchor: 'end',    // データポイントの外側端
-            offset: 6,        // 右方向への距離
+            align: 0,
+            anchor: 'center',
+            offset: 8,
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
+            
+            // ★ RGBA 形式で 透過度（アルファ値 0.0 〜 1.0）を指定可能
+            borderColor: 'rgba(255, 255, 255, 0.7)', // 透過70%の白枠
+            borderWidth: 4,
+            
             borderRadius: 4,
             padding: { top: 3, bottom: 4, left: 6, right: 6 },
-            shadowColor: 'rgba(255, 255, 255, 0.7)',
-            shadowBlur: 6,
             font: {
               size: 22,
               family: 'Open Sans Condensed Bold',
@@ -285,7 +288,8 @@ for (let i = 1; i <= totalFrames; i++) {
             font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
-            stepSize: 3,
+            // ★ stepSize ではなく callback で 3 おきにフィルター
+            callback: (value, index) => (index % 3 === 0 ? labels[index] : ''),
             color: '#111111',
             font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0,
