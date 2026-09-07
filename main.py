@@ -555,7 +555,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
                     "onClick": {"openLink": {"url": jma_url}}
                 },
                 {
-                    "text": "活性汚泥 見えるか❔",
+                    "text": "活性汚泥　見えるか❔",
                     "color": {"red": 0.90, "green": 0.95, "blue": 0.88, "alpha": 1.0},
                     "onClick": {"openLink": {"url": activated_sludge_url}}
                 }
