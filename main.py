@@ -194,7 +194,7 @@ def get_color_for_value(val):
 def get_nice_step(raw_max, steps=5):
     """グラフY軸の目盛り間隔（stepSize）をキリの良い数値に調整します。"""
     raw_step = raw_max / steps
-    nice_steps = [1, 2, 5, 10, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
+    nice_steps = [5, 10, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
     for n in nice_steps:
         if n >= raw_step:
             return n
