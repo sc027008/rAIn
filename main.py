@@ -649,7 +649,8 @@ def main():
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
             cum_15h_int = int(cum_15h)
             formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
-            send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, today_str)
+            # ★ 第7引数を today_str から chart_url に修正
+            send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
 
     print("Execution completed successfully.")
