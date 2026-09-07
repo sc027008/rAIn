@@ -24,7 +24,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm' # ★ npm パッケージのキャッシュを有効化（# を除去）
+          cache: 'npm' # ★ npm パッケージのキャッシュを有効化
 
       - name: Node.js 依存ライブラリのインストール & Lockファイル自動生成
         run: |
@@ -47,6 +47,7 @@ jobs:
       - name: 雨量チェックプログラムの実行
         env:
           CHAT_WEBHOOK_URL: ${{ secrets.CHAT_WEBHOOK_URL }}
+          TEST_CHAT_WEBHOOK_URL: ${{ secrets.TEST_CHAT_WEBHOOK_URL }} # ★ テスト環境用送信先
           TARGET_LAT: ${{ secrets.TARGET_LAT }}
           TARGET_LON: ${{ secrets.TARGET_LON }}
           NIGHT_RAIN_THRESHOLD: ${{ secrets.NIGHT_RAIN_THRESHOLD }}
