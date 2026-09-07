@@ -627,7 +627,7 @@ def main():
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
-        formatted_text = f"<font color=\"#78909c\">10分後: </font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>"
+        formatted_text = f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>"
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
@@ -636,7 +636,7 @@ def main():
     # 条件3: 雨が止んだ場合の「雨上がりの予感」通知
     elif current_rank == 0 and last_notified_type == "RAINY":
         _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-        formatted_text = f"<font color=\"#78909c\">10分後: </font><font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+        formatted_text = f"<font color=\"#78909c\">10分後は</font><font color=\"{color_code}\"><b>{rain_desc}</b></font>"
         send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
         save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
 
