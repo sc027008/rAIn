@@ -550,7 +550,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "雨雲レーダーを開く🌧️",
+                    "text": "<b>雨雲レーダー</b>を開く🌧️",
                     "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
                     "onClick": {"openLink": {"url": jma_url}}
                 },
