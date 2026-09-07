@@ -712,8 +712,8 @@ def test_forced_notification():
         save_state(0.0, 0, 0, "NONE", "1970-01-01")
         
         # main() 内で17時として動作させるためのテスト送信
-        lat = float(os.environ.get("TARGET_LAT", "35.1815"))
-        lon = float(os.environ.get("TARGET_LON", "136.9066"))
+        lat = float(os.environ.get("TARGET_LAT"))
+        lon = float(os.environ.get("TARGET_LON"))
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, 0.0, ZOOM_LEVEL)
         cum_15h_int = int(cum_15h)
         formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b> (テスト検証)"
