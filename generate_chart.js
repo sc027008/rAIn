@@ -227,7 +227,7 @@ for (let i = 1; i <= totalFrames; i++) {
             borderWidth: 4, // 3〜4px 程度にすると外側へのくっきりした白枠になります
             
             borderRadius: 8,
-            padding: { top: 3, bottom: 4, left: 6, right: 6 },
+            padding: { top: 3, bottom: 4, left: 7, right: 7 },
             font: { size: 23, family: 'Open Sans Condensed Bold', weight: 'bold'},
             formatter: (value) => Math.round(value)
           }
