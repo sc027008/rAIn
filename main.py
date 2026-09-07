@@ -686,7 +686,16 @@ def test_forced_notification():
         # ---------------------------------------------------------
         print("\n--- [1/3] 「アメデス」通知ルートのテスト ---")
         save_state(0.0, 0, 0, "NONE", "")
+        
+        # リアルタイムの天候に依存せず通過させるため、一時的に降雨状態(ランク2 / 15mm/h)を返却
+        global fetch_10min_future_rain
+        original_fetch = fetch_10min_future_rain
+        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("やや強い雨", 15.0, "#1e88e5", 2, "20260101000000", "20260101001000")
+        
         main()
+        
+        # モックの解除
+        fetch_10min_future_rain = original_fetch
 
         # ---------------------------------------------------------
         # テスト 2: 「雨上がりの予感」通知のトレース
