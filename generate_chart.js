@@ -222,11 +222,11 @@ for (let i = 1; i <= totalFrames; i++) {
             color: '#ffffff',
             backgroundColor: '#7B1FA2',
             
-            // ★ RGBA 形式で 透過度（アルファ値 0.0 〜 1.0）を指定可能
-            borderColor: 'rgba(255, 255, 255, 0.7)', // 透過70%の白枠
-            borderWidth: 6,
+            // ★ 完全な不透明の白を指定することで混色（薄紫化）を防ぐ
+            borderColor: '#ffffff',
+            borderWidth: 3, // 3〜4px 程度にすると外側へのくっきりした白枠になります
             
-            borderRadius: 10,
+            borderRadius: 8,
             padding: { top: 3, bottom: 4, left: 6, right: 6 },
             font: {
               size: 22,
