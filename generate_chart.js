@@ -224,15 +224,11 @@ for (let i = 1; i <= totalFrames; i++) {
             
             // ★ 完全な不透明の白を指定することで混色（薄紫化）を防ぐ
             borderColor: '#ffffff',
-            borderWidth: 3, // 3〜4px 程度にすると外側へのくっきりした白枠になります
+            borderWidth: 4, // 3〜4px 程度にすると外側へのくっきりした白枠になります
             
             borderRadius: 8,
             padding: { top: 3, bottom: 4, left: 6, right: 6 },
-            font: {
-              size: 22,
-              family: 'Open Sans Condensed Bold',
-              weight: 'bold'
-            },
+            font: { size: 23, family: 'Open Sans Condensed Bold', weight: 'bold'},
             formatter: (value) => Math.round(value)
           }
         },
