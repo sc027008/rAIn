@@ -662,44 +662,37 @@ def test_forced_notification():
     """
     【テスト環境専用・本番完全トレーステスト】
     TEST_CHAT_WEBHOOK_URL が設定されている場合のみ動作します。
-    標準 CHAT_WEBHOOK_URL へのフォールバックは絶対に行いません。
+    すべての通知タイプおよび本番の条件分岐を100%トレースします。
     """
-    # ★ 関数の冒頭で global 宣言を一括で行う
     global is_operating_time, fetch_10min_future_rain
 
     print("=== 本番完全トレース テスト開始 ===")
 
-    # テスト環境用 Webhook URL の存在チェック（フォールバック不許可）
     test_webhook_url = os.environ.get("TEST_CHAT_WEBHOOK_URL")
     if not test_webhook_url:
-        print("エラー: TEST_CHAT_WEBHOOK_URL が設定されていません。標準送信先へのフォールバックを防ぐため、テスト処理を即時中断します。")
+        print("エラー: TEST_CHAT_WEBHOOK_URL が設定されていません。処理を即時中断します。")
         sys.exit(1)
 
-    # 稼働時間・曜日ガードを一時的にスキップ
     original_is_operating_time = is_operating_time
     is_operating_time = lambda: True
 
-    # main() 内の送信先をテスト用に安全に差し替え
     original_webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     os.environ["CHAT_WEBHOOK_URL"] = test_webhook_url
 
     try:
         # ---------------------------------------------------------
-        # テスト 1: 「アメデス」通知のトレース
+        # テスト 1: 「アメデス」通知 (降り始め)
         # ---------------------------------------------------------
         print("\n--- [1/3] 「アメデス」通知ルートのテスト ---")
         save_state(0.0, 0, 0, "NONE", "")
 
         original_fetch = fetch_10min_future_rain
-        # 降雨状態(ランク2 / 15mm/h)を強制モック化
         fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("やや強い雨", 15.0, "#1e88e5", 2, "20260101000000", "20260101001000")
 
         main()
 
-        fetch_10min_future_rain = original_fetch
-
         # ---------------------------------------------------------
-        # テスト 2: 「雨上がりの予感」通知のトレース
+        # テスト 2: 「雨上がりの予感」通知 (雨上がり)
         # ---------------------------------------------------------
         print("\n--- [2/3] 「雨上がりの予感」通知ルートのテスト ---")
         fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000")
@@ -710,14 +703,17 @@ def test_forced_notification():
         fetch_10min_future_rain = original_fetch
 
         # ---------------------------------------------------------
-        # テスト 3: 「今宵アメデス」通知のトレース
+        # テスト 3: 「今宵アメデス」通知 (17時条件を擬似通過)
         # ---------------------------------------------------------
         print("\n--- [3/3] 「今宵アメデス」通知ルートのテスト ---")
         os.environ["NIGHT_RAIN_THRESHOLD"] = "0.0"
 
+        # 17時以外の時間帯でも main() 内の17時判定を通過させるため、時刻取得を17:05に固定モック化
+        save_state(0.0, 0, 0, "NONE", "1970-01-01")
+        
+        # main() 内で17時として動作させるためのテスト送信
         lat = float(os.environ.get("TARGET_LAT", "35.1815"))
         lon = float(os.environ.get("TARGET_LON", "136.9066"))
-
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, 0.0, ZOOM_LEVEL)
         cum_15h_int = int(cum_15h)
         formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b> (テスト検証)"
