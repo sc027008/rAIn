@@ -550,12 +550,12 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "<b>雨雲レーダー</b>を見る🌧️",
+                    "text": "雨雲レーダーを開く🌧️",
                     "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
                     "onClick": {"openLink": {"url": jma_url}}
                 },
                 {
-                    "text": "活性汚泥　見えるか❔",
+                    "text": "活性汚泥 見えるか❔",
                     "color": {"red": 0.90, "green": 0.95, "blue": 0.88, "alpha": 1.0},
                     "onClick": {"openLink": {"url": activated_sludge_url}}
                 }
@@ -626,12 +626,8 @@ def main():
     elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-        cum_15h_int = int(cum_15h)
         
-        formatted_text = (
-            f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            # f"<font color=\"#757575\">今後15時間積算 {cum_15h_int} mm</font>"
-        )
+        formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>"
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
@@ -659,113 +655,88 @@ def main():
     print("Execution completed successfully.")
 
 # =========================================================
-# 6. 原因切り分け用 強制データ取得＆Chat送信テスト関数
+# 6. 本番ロジック完全トレース型 強制3種通知テスト関数
 # =========================================================
-def find_active_rain_location():
-    """
-    日本全国の主要候補地および雨雲タイルをランダムな順序で探索し、
-    現在〜10分後に雨が降っている（rain_val > 0.0）地点の (地名, lat, lon) を返します。
-    """
-    candidate_spots = [
-        ("札幌", 43.0618, 141.3545), ("函館", 41.7687, 140.7288), ("青森", 40.8244, 140.7400),
-        ("秋田", 39.7186, 140.1024), ("仙台", 38.2682, 140.8694), ("新潟", 37.9161, 139.0364),
-        ("金沢", 36.5613, 136.6562), ("東京", 35.6762, 139.6503), ("八丈島", 33.1112, 139.7902),
-        ("静岡", 34.9756, 138.3828), ("名古屋", 35.1815, 136.9066), ("大阪", 34.6937, 135.5023),
-        ("和歌山", 34.2260, 135.1675), ("鳥取", 35.5011, 134.2351), ("広島", 34.3853, 132.4553),
-        ("高知", 33.5597, 133.5311), ("松山", 33.8416, 132.7657), ("福岡", 33.5902, 130.4017),
-        ("長崎", 32.7503, 129.8777), ("鹿児島", 31.5966, 130.5571), ("奄美", 28.3772, 129.4950),
-        ("那覇", 26.2124, 127.6809), ("石垣島", 24.3448, 124.1572)
-    ]
-    random.shuffle(candidate_spots)
-
-    try:
-        for name, lat, lon in candidate_spots:
-            _, rain_val, _, _, _, _ = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
-            if rain_val > 0.0:
-                return f"{name}周辺", lat, lon
-
-    except Exception as e:
-        print(f"降雨エリア探索エラー: {e}")
-
-    return None, None, None
-
 def test_forced_notification():
     """
-    【デバッグ・検証用関数】
-    10分後予測データの検証ができるよう、観測時刻(Base)と予測時刻(Valid=+10分)を明示して
-    気象庁Web GUI照合用リンク付きのカードメッセージを Google Chat へ送信します。
+    【テスト環境専用・本番完全トレーステスト】
+    TEST_CHAT_WEBHOOK_URL が設定されている場合のみ動作します。
+    標準 CHAT_WEBHOOK_URL へのフォールバックは絶対に行いません。
     """
-    webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
-    if not webhook_url:
-        print("エラー: CHAT_WEBHOOK_URL が設定されていません。")
-        return
+    print("=== 本番完全トレース テスト開始 ===")
 
-    print("=== 全国雨域自動スキャン開始 ===")
+    # ★ テスト環境用 Webhook URL の存在チェック（フォールバック不許可）
+    test_webhook_url = os.environ.get("TEST_CHAT_WEBHOOK_URL")
+    if not test_webhook_url:
+        print("エラー: TEST_CHAT_WEBHOOK_URL が設定されていません。標準送信先へのフォールバックを防ぐため、テスト処理を即時中断します。")
+        sys.exit(1)
 
-    location_name, lat, lon = find_active_rain_location()
+    # 稼働時間・曜日ガードを一時的にスキップ
+    global is_operating_time
+    original_is_operating_time = is_operating_time
+    is_operating_time = lambda: True
 
-    if not lat or not lon:
-        print("現在、日本全国の主要監視エリアに降雨が検出されませんでした（全域晴れ/薄くもり）。")
+    # main() 内の送信先をテスト用に安全に差し替え
+    original_webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
+    os.environ["CHAT_WEBHOOK_URL"] = test_webhook_url
+
+    try:
+        # ---------------------------------------------------------
+        # テスト 1: 「アメデス」通知のトレース
+        # ---------------------------------------------------------
+        print("\n--- [1/3] 「アメデス」通知ルートのテスト ---")
+        save_state(0.0, 0, 0, "NONE", "")
+        main()
+
+        # ---------------------------------------------------------
+        # テスト 2: 「雨上がりの予感」通知のトレース
+        # ---------------------------------------------------------
+        print("\n--- [2/3] 「雨上がりの予感」通知ルートのテスト ---")
+        global fetch_10min_future_rain
+        original_fetch = fetch_10min_future_rain
+        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000")
+
+        save_state(10.0, 2, 2, "RAINY", "")
+        main()
+        
+        fetch_10min_future_rain = original_fetch
+
+        # ---------------------------------------------------------
+        # テスト 3: 「今宵アメデス」通知のトレース
+        # ---------------------------------------------------------
+        print("\n--- [3/3] 「今宵アメデス」通知ルートのテスト ---")
+        os.environ["NIGHT_RAIN_THRESHOLD"] = "0.0"
+        
         lat = float(os.environ.get("TARGET_LAT", "35.1815"))
         lon = float(os.environ.get("TARGET_LON", "136.9066"))
-        location_name = "指定座標(降雨なし)"
-
-    print(f"検証対象地点決定: {location_name} (緯度:{lat}, 経度:{lon})")
-
-    # 10分後予測データの取得および検証メタデータの取得
-    rain_desc, rain_val, color_code, _, basetime, validtime = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
-
-    cum_3h, cum_15h, hourly_rain_list, chart_url, details = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-    jma_gui_url = f"https://www.jma.go.jp/bosai/kaikotan/#lat:{lat}/lon:{lon}/zoom:11"
-
-    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
-    
-    # 10分後の検証時刻表示
-    v_time_str = f"{validtime[8:10]}:{validtime[10:12]}" if validtime else "10分後"
-    b_time_str = f"{basetime[8:10]}:{basetime[10:12]}" if basetime else "観測時"
-
-    logs = [
-        f"<b>【10分後予測 検証デバッグ配信】</b>",
-        f"<b>検証対象地域</b>: 📍 <b>{location_name}</b>",
-        f"<b>10分後予報 ({v_time_str} / Base:{b_time_str})</b>: <font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>",
-        f"<b>気象庁Web GUI確認リンク</b>: <a href=\"{jma_gui_url}\">雨雲の動き(公式GUI)で画面照合</a><br>",
-        f"<b>【15時間予測値およびHTTPレスポンス詳細】</b>"
-    ]
-
-    for d in details:
-        idx = d["idx"]
-        vt = d["validtime"]
-        code = d["status_code"]
-        rv = d["rain_val"]
         
-        if code == 200:
-            if rv is not None and rv > 0.0:
-                logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | <b><font color=\"#ff0000\">{rv} mm/h</font></b>")
-            else:
-                logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#2e7d32\">HTTP 200</font> | {rv} mm/h")
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, 0.0, ZOOM_LEVEL)
+        cum_15h_int = int(cum_15h)
+        formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b> (テスト検証)"
+        
+        send_google_chat_card(
+            webhook_url=test_webhook_url,
+            lat=lat,
+            lon=lon,
+            title_text="今宵アメデス",
+            formatted_text=formatted_text,
+            icon_url=ICON_NIGHT_RAIN,
+            chart_url=chart_url
+        )
+
+        print("\n=== すべてのテスト通知の送信が完了しました ===")
+
+    finally:
+        is_operating_time = original_is_operating_time
+        if original_webhook_url is not None:
+            os.environ["CHAT_WEBHOOK_URL"] = original_webhook_url
         else:
-            logs.append(f"・+{idx:02d}h ({vt}): <font color=\"#e53935\"><b>HTTP {code}</b></font>")
-
-    logs.append(f"<br><b>15時間積算雨量</b>: {int(cum_15h)} mm")
-    formatted_text = "<br>".join(logs)
-
-    send_google_chat_card(
-        webhook_url=webhook_url,
-        lat=lat,
-        lon=lon,
-        title_text=f"🌧️ 10分後予測検証 ({location_name})",
-        formatted_text=formatted_text,
-        icon_url=ICON_RAINY,
-        chart_url=chart_url
-    )
-
-    print(f"送信完了: {location_name} (lat:{lat}, lon:{lon}) の10分後予測データをGoogle Chatへ送信しました。")
+            os.environ.pop("CHAT_WEBHOOK_URL", None)
 
 # =========================================================
 # 7. スクリプト実行エントリーポイント
 # =========================================================
 if __name__ == "__main__":
-    
     # ---------------------------------------------------------
     # 実行モード選択
     # ---------------------------------------------------------
