@@ -21,7 +21,7 @@ STATE_FILE = "state.json"
 ZOOM_LEVEL = 10
 
 # 夜間積算雨量（17時〜翌8時）の通知判定しきい値（mm）
-NIGHT_RAIN_THRESHOLD = float(os.environ.get("NIGHT_RAIN_THRESHOLD", "15.0"))
+NIGHT_RAIN_THRESHOLD = 5.0
 
 # Google Noto Emoji アイコンURL（カードヘッダー用）
 ICON_RAINY = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u2614.png"
