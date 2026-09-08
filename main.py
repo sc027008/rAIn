@@ -877,17 +877,4 @@ if __name__ == "__main__":
     # main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信、送り先はテストチャット）
-    # test_forced_notification()
-
-    lat_str = os.environ.get("TARGET_LAT")
-    lon_str = os.environ.get("TARGET_LON")
-
-    if not lat_str or not lon_str:
-        print("エラー: TARGET_LAT または TARGET_LON が設定されていません。")
-        sys.exit(1)
-
-    lat = float(lat_str)
-    lon = float(lon_str)
-
-    # 完全検証関数を実行
-    debug_nowc_complete(lat, lon)
+    test_forced_notification()
