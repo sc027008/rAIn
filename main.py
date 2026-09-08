@@ -645,7 +645,7 @@ def main():
 
         formatted_text = (
             f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
-            f"今後15時間の積算雨量 <b>{cum_15h_int} mm</b><br>"
+            f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
             f"北分離槽 <b>{north_tank} m³</b><br>"
             f"南分離槽 <b>{south_tank} m³</b>"
         )
@@ -685,7 +685,7 @@ def main():
             south_tank = round(cum_15h * 6.1)
 
             formatted_text = (
-                f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b><br>"
+                f"17～翌8時の積算 <b>{cum_15h_int} mm</b><br>"
                 f"北分離槽 <b>{north_tank} m³</b><br>"
                 f"南分離槽 <b>{south_tank} m³</b>"
             )
