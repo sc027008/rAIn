@@ -365,55 +365,103 @@ def parse_jma_time(time_str):
 
 def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
     """
-    nowc (ナウキャスト) APIから「10分後」の雨量予測データを取得します（修正版）
+    最新の basetime における「0分後〜10分後」の全コマ（0m, 5m, 10m）× 3x3px から
+    今後10分以内の最大雨量を算出します。（秘匿情報ログ出力防止版）
     """
     headers = {"User-Agent": "Mozilla/5.0"}
+    # 秘匿情報（lat, lon）は出力せず、開始ログのみ記録
+    print(f"[LOG][NC10] 判定開始 (ズームレベル: {zoom})")
+
     try:
         url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
         res = requests.get(url_target, headers=headers, timeout=10)
+        
         if res.status_code != 200:
+            print(f"[LOG][NC10][FAIL] targetTimes_N1.json 取得失敗: HTTP {res.status_code}")
             return "降水なし", 0.0, "#78909c", 0, None, None
 
         target_times = res.json()
         if not target_times:
+            print("[LOG][NC10][FAIL] targetTimes_N1.json が空データです")
             return "降水なし", 0.0, "#78909c", 0, None, None
 
         base_dt = parse_jma_time(target_times[0]["basetime"])
-        target_10min_dt = base_dt + timedelta(minutes=10)
+        target_limit_dt = base_dt + timedelta(minutes=10)
+        print(f"[LOG][NC10] 基準時間(basetime)={target_times[0]['basetime']} (対象範囲: +0分 〜 +10分以内)")
 
-        best_match = None
-        min_diff = float("inf")
-        
+        # 0分後(実況)〜10分後までのコマ(validtime <= basetime + 10分)を抽出
+        candidate_frames = []
         for t in target_times:
             v_dt = parse_jma_time(t["validtime"])
-            
-            # ★修正点: validtime が basetime より未来（10分後方向）のコマのみに対象を絞る
-            if v_dt > base_dt:
-                diff = abs((v_dt - target_10min_dt).total_seconds())
-                if diff < min_diff:
-                    min_diff = diff
-                    best_match = t
+            if base_dt <= v_dt <= target_limit_dt:
+                candidate_frames.append(t)
 
-        if best_match and min_diff <= 300:
-            basetime = best_match["basetime"]
-            validtime = best_match["validtime"]
-            
-            element_name = "hrpns"
-            if "elements" in best_match and best_match["elements"]:
-                element_name = best_match["elements"][0]
+        if not candidate_frames:
+            print("[LOG][NC10][WARN] 条件に適合する時間コマ(0〜10分後)が見つかりませんでした")
+            return "降水なし", 0.0, "#78909c", 0, None, None
 
-            xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
-            
+        print(f"[LOG][NC10] 抽出成功: 対象時間コマ数={len(candidate_frames)}件")
+
+        xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
+        # 座標変換成功のみを記録（具体的な数値 xtile, ytile, px, py は非表示）
+        print("[LOG][NC10] 該当タイルのグリッド座標計算完了")
+
+        max_rain_val = -1.0
+        best_result = ("降水なし", 0.0, "#78909c", 0, None, None)
+        success_tile_count = 0
+
+        # 該当するすべてのコマ(0m, 5m, 10m等)を巡回
+        for frame in candidate_frames:
+            basetime = frame["basetime"]
+            validtime = frame["validtime"]
+            element_name = frame.get("elements", ["hrpns"])[0] if frame.get("elements") else "hrpns"
+
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{element_name}/{zoom}/{xtile}/{ytile}.png"
             t_res = requests.get(tile_url, headers=headers, timeout=10)
-            if t_res.status_code == 200:
-                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-                pixel_color = img.getpixel((px, py))
-                rain_desc, rain_val, color_code, rank = rgb_to_rainfall(pixel_color)
-                return rain_desc, rain_val, color_code, rank, basetime, validtime
+            
+            if t_res.status_code != 200:
+                # URLに座標が含まれるため、URL自体は出力せず HTTP ステータスとコマ時間のみ記録
+                print(f"[LOG][NC10][WARN] タイル取得失敗 (HTTP {t_res.status_code}): validtime={validtime}")
+                continue
 
+            success_tile_count += 1
+            img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+            
+            frame_max_val = -1.0
+            frame_best = None
+
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    nx, ny = px + dx, py + dy
+                    if 0 <= nx < img.width and 0 <= ny < img.height:
+                        pixel_color = img.getpixel((nx, ny))
+                        desc, val, color_code, rank = rgb_to_rainfall(pixel_color)
+                        
+                        if val > frame_max_val:
+                            frame_max_val = val
+                            frame_best = (desc, val, color_code, rank, basetime, validtime)
+
+                        if val > max_rain_val:
+                            max_rain_val = val
+                            best_result = (desc, val, color_code, rank, basetime, validtime)
+
+            print(f"[LOG][NC10][TILE-OK] コマ: {validtime} -> 3x3最大値: {frame_max_val} mm/h ({frame_best[0]})")
+
+        if success_tile_count == 0:
+            print("[LOG][NC10][FAIL] 全対象コマの画像タイル取得に失敗しました (全て HTTP 200 以外)")
+            return "降水なし", 0.0, "#78909c", 0, None, None
+
+        if max_rain_val == 0.0:
+            print(f"[LOG][NC10][RESULT] タイル取得成功({success_tile_count}/{len(candidate_frames)}枚) - 3x3全領域で降水ピクセルなし(0.0 mm/h)")
+        else:
+            print(f"[LOG][NC10][RESULT] 最終判定結果: {best_result[1]} mm/h ({best_result[0]}), validtime={best_result[5]}")
+
+        return best_result
+
+    except requests.exceptions.Timeout:
+        print("[LOG][NC10][EXCEPT] ナウキャスト通信タイムアウトが発生しました (10秒超過)")
     except Exception as e:
-        print(f"10分後ナウキャスト取得エラー: {e}")
+        print(f"[LOG][NC10][EXCEPT] ナウキャスト処理中に予期せぬエラーが発生しました: {e}")
 
     return "降水なし", 0.0, "#78909c", 0, None, None
 
