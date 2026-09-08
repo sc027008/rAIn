@@ -643,10 +643,11 @@ def main():
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
-        cum_15h_int = round(cum_15h)
-        north_tank = round(cum_15h * 8.1)
-        south_tank = round(cum_15h * 6.1)
-
+        # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
+            cum_15h_int = int(cum_15h + 0.5)
+            north_tank = int((cum_15h * 8.1) + 0.5)
+            south_tank = int((cum_15h * 6.1) + 0.5)
+        
         formatted_text = (
             f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
@@ -684,9 +685,10 @@ def main():
         print(f"[LOG] 17-8時積算雨量: {cum_15h} mm (閾値: {NIGHT_RAIN_THRESHOLD} mm)")
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
-            cum_15h_int = round(cum_15h)
-            north_tank = round(cum_15h * 8.1)
-            south_tank = round(cum_15h * 6.1)
+            # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
+            cum_15h_int = int(cum_15h + 0.5)
+            north_tank = int((cum_15h * 8.1) + 0.5)
+            south_tank = int((cum_15h * 6.1) + 0.5)
 
             formatted_text = (
                 f"17～翌8時の積算 <b>{cum_15h_int} mm</b><br>"
