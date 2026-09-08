@@ -644,9 +644,9 @@ def main():
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
         # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
-            cum_15h_int = int(cum_15h + 0.5)
-            north_tank = int((cum_15h * 8.1) + 0.5)
-            south_tank = int((cum_15h * 6.1) + 0.5)
+        cum_15h_int = int(cum_15h + 0.5)
+        north_tank = int((cum_15h * 8.1) + 0.5)
+        south_tank = int((cum_15h * 6.1) + 0.5)
         
         formatted_text = (
             f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
