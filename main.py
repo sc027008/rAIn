@@ -579,7 +579,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         pass
 
 # =========================================================
-# 5. メインロジック（本番定期実行用）
+# 5. メインロジック（本番定期実行用 - 案1: textParagraph改行）
 # =========================================================
 def main():
     """
@@ -589,7 +589,7 @@ def main():
     3. 状態管理(state.json)のランク変化に基づき Google Chat 通知を判定・送信
     4. 17時台の夜間雨量アサート条件を満たした場合の特別通知
     """
-    print("=== [LOG] main() 実行開始 ===")
+    print("=== [LOG] main() 実行開始 (案1) ===")
     
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
@@ -639,14 +639,23 @@ def main():
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
-        formatted_text = f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font>"
+        cum_15h_int = round(cum_15h)
+        north_tank = round(cum_15h * 8.1)
+        south_tank = round(cum_15h * 6.1)
+
+        formatted_text = (
+            f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+            f"今後15時間の積算雨量 <b>{cum_15h_int} mm</b><br>"
+            f"北分離槽 <b>{north_tank} m³</b><br>"
+            f"南分離槽 <b>{south_tank} m³</b>"
+        )
         
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
         save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
         sent_amedes_in_this_run = True
         print("[LOG] 「アメデス」カード通知を送信しました。")
 
-    # 条件3: 雨が止んだ場合の「雨上がりの予感」通知
+    # 条件3: 雨が止んだ場合の「雨上がりの予感」通知（変更なし）
     elif current_rank == 0 and last_notified_type == "RAINY":
         print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象) -> 雨が止みました。")
         _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
@@ -671,8 +680,15 @@ def main():
         print(f"[LOG] 17-8時積算雨量: {cum_15h} mm (閾値: {NIGHT_RAIN_THRESHOLD} mm)")
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
-            cum_15h_int = int(cum_15h)
-            formatted_text = f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b>"
+            cum_15h_int = round(cum_15h)
+            north_tank = round(cum_15h * 8.1)
+            south_tank = round(cum_15h * 6.1)
+
+            formatted_text = (
+                f"17～翌8時の積算雨量 <b>{cum_15h_int} mm</b><br>"
+                f"北分離槽 <b>{north_tank} m³</b><br>"
+                f"南分離槽 <b>{south_tank} m³</b>"
+            )
             send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
             print("[LOG] 「今宵アメデス」カード通知を送信しました。")
