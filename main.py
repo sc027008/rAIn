@@ -365,10 +365,7 @@ def parse_jma_time(time_str):
 
 def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
     """
-    nowc (ナウキャスト) APIから「10分後」の雨量予測データを取得します。
-    【10分後ロジックの補足】
-    targetTimes_N1.json 内の validtime から、basetime（観測時刻）+ 10分後となるコマを抽出し、
-    雨雲が直近接近してくるかどうかの早め対策判断に使用します。
+    nowc (ナウキャスト) APIから「10分後」の雨量予測データを取得します（修正版）
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -381,26 +378,33 @@ def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
         if not target_times:
             return "降水なし", 0.0, "#78909c", 0, None, None
 
-        # 観測基準時刻（basetime）の取得
         base_dt = parse_jma_time(target_times[0]["basetime"])
         target_10min_dt = base_dt + timedelta(minutes=10)
 
-        # validtime が basetime + 10分 に最も近い予報コマを特定
         best_match = None
         min_diff = float("inf")
+        
         for t in target_times:
             v_dt = parse_jma_time(t["validtime"])
-            diff = abs((v_dt - target_10min_dt).total_seconds())
-            if diff < min_diff:
-                min_diff = diff
-                best_match = t
+            
+            # ★修正点: validtime が basetime より未来（10分後方向）のコマのみに対象を絞る
+            if v_dt > base_dt:
+                diff = abs((v_dt - target_10min_dt).total_seconds())
+                if diff < min_diff:
+                    min_diff = diff
+                    best_match = t
 
-        if best_match and min_diff <= 300: # 5分誤差以内のコマを正とみなす
+        if best_match and min_diff <= 300:
             basetime = best_match["basetime"]
             validtime = best_match["validtime"]
+            
+            element_name = "hrpns"
+            if "elements" in best_match and best_match["elements"]:
+                element_name = best_match["elements"][0]
+
             xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
             
-            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/hrpns/{zoom}/{xtile}/{ytile}.png"
+            tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{element_name}/{zoom}/{xtile}/{ytile}.png"
             t_res = requests.get(tile_url, headers=headers, timeout=10)
             if t_res.status_code == 200:
                 img = Image.open(BytesIO(t_res.content)).convert("RGBA")
@@ -666,7 +670,7 @@ def main():
 
     else:
         print("[LOG] 分岐通過: リアルタイム通知条件に合致しないため通知をスキップしました（状態のみ更新）。")
-        save_state(rain_val, rain_val, last_notified_rank, last_notified_type, last_evening_alert_date)
+        save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date)
 
     # 条件4: 夕方（17時0分〜10分）の「今宵アメデス」積算雨量警告通知
     is_17h_window = (now.hour == 17 and 0 <= now.minute <= 10)
