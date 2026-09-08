@@ -779,6 +779,88 @@ def test_forced_notification():
         else:
             os.environ.pop("CHAT_WEBHOOK_URL", None)
 
+def debug_nowc_complete(lat, lon, zoom=ZOOM_LEVEL):
+    """
+    1回の実行で10分後ナウキャストの不具合原因を完全特定する検証関数
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
+    url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
+    
+    print("\n=== [10分後ナウキャスト 一発特定検証ログ] ===")
+    try:
+        # 1. targetTimes_N1.json 取得
+        res = requests.get(url_target, headers=headers, timeout=10)
+        print(f"[1] targetTimes_N1.json: HTTP {res.status_code}")
+        if res.status_code != 200:
+            return
+
+        target_times = res.json()
+        if not target_times:
+            print("エラー: メタデータが空です")
+            return
+
+        # 2. 10分後のコマ特定
+        base_dt = parse_jma_time(target_times[0]["basetime"])
+        target_10min_dt = base_dt + timedelta(minutes=10)
+
+        best_match = None
+        min_diff = float("inf")
+        for t in target_times:
+            v_dt = parse_jma_time(t["validtime"])
+            diff = abs((v_dt - target_10min_dt).total_seconds())
+            if diff < min_diff:
+                min_diff = diff
+                best_match = t
+
+        print(f"[2] 観測時刻(basetime): {target_times[0]['basetime']}")
+        print(f"    抽出コマ(validtime): {best_match.get('validtime')} (差分: {min_diff}秒)")
+        print(f"    含まれる elements: {best_match.get('elements', [])}")
+
+        # 3. 座標計算とタイルURL生成
+        xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
+        basetime = best_match["basetime"]
+        validtime = best_match["validtime"]
+        
+        # nowcの要素名を確認（要素が指定されていればそれを使用、なければhrpns）
+        element_name = "hrpns"
+        if "elements" in best_match and best_match["elements"]:
+            element_name = best_match["elements"][0]
+
+        tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{element_name}/{zoom}/{xtile}/{ytile}.png"
+        print(f"[3] 生成URL: {tile_url}")
+        print(f"    計算座標: zoom={zoom}, X={xtile}, Y={ytile}, px={px}, py={py}")
+
+        # 4. タイル画像の解析
+        t_res = requests.get(tile_url, headers=headers, timeout=10)
+        print(f"[4] 画像通信レスポンス: HTTP {t_res.status_code}")
+        
+        if t_res.status_code == 200:
+            img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+            target_pixel = img.getpixel((px, py))
+            
+            # 画像全体の色付きピクセル（アルファ値 > 0 かつ 白でない）をスキャン
+            non_empty_pixels = []
+            for y in range(img.height):
+                for x in range(img.width):
+                    r, g, b, a = img.getpixel((x, y))
+                    if a > 0 and (r, g, b) != (255, 255, 255):
+                        non_empty_pixels.append(((x, y), (r, g, b, a)))
+
+            print(f"[5] 対象ピクセル(px={px}, py={py})のRGBA: {target_pixel}")
+            print(f"[6] タイル画像全体(256x256)の中の雨雲ピクセル数: {len(non_empty_pixels)} 個")
+            
+            if non_empty_pixels:
+                sample_pos, sample_color = non_empty_pixels[0]
+                print(f"    - 検出された雨雲ピクセルのサンプル: 位置={sample_pos}, RGBA={sample_color}")
+                desc, val, color, rank = rgb_to_rainfall(sample_color)
+                print(f"    - サンプル色を既存の rgb_to_rainfall に通した結果: {desc} ({val} mm/h)")
+            else:
+                print("    - タイル画像全体が完全に空（晴れ状態または透過画像）です")
+
+    except Exception as e:
+        print(f"実行中例外: {e}")
+    print("=================================================\n")
+
 # =========================================================
 # 7. スクリプト実行エントリーポイント
 # =========================================================
@@ -791,4 +873,17 @@ if __name__ == "__main__":
     # main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信、送り先はテストチャット）
-    test_forced_notification()
+    # test_forced_notification()
+
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
+
+    if not lat_str or not lon_str:
+        print("エラー: TARGET_LAT または TARGET_LON が設定されていません。")
+        sys.exit(1)
+
+    lat = float(lat_str)
+    lon = float(lon_str)
+
+    # 完全検証関数を実行
+    debug_nowc_complete(lat, lon)
