@@ -1003,8 +1003,8 @@ if __name__ == "__main__":
     # ---------------------------------------------------------
     
     # 【本番運用モード】（時間・曜日ガードあり）
-    # main()
+    main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信、送り先はテストチャット）
-    debug_fetch_10min_future_rain_logic()
-    test_forced_notification()
+    # debug_fetch_10min_future_rain_logic()
+    # test_forced_notification()
