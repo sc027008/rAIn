@@ -74,14 +74,12 @@ def is_operating_time():
 # =========================================================
 # 2. 状態（state.json）の読み込み・保存・初期化
 # =========================================================
-def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date=""):
-    """実行状態（前回通知した雨量ランク・通知タイプ・日付など）をstate.jsonへ永続化保存します。"""
+def save_state(weather_status, last_amedes_time, last_evening_alert_date=""):
+    """実行状態（天候ステータス・アメデス通知時刻・日付）をstate.jsonへ永続化保存します。"""
     jst = timezone(timedelta(hours=9))
     data = {
-        "last_rain_val": rain_val,
-        "last_rank": current_rank,
-        "last_notified_rank": last_notified_rank,
-        "last_notified_type": last_notified_type,
+        "weather_status": weather_status,
+        "last_amedes_time": last_amedes_time,
         "last_evening_alert_date": last_evening_alert_date,
         "last_updated": datetime.now(jst).isoformat()
     }
@@ -91,13 +89,13 @@ def save_state(rain_val, current_rank, last_notified_rank, last_notified_type, l
 def init_state_file():
     """state.jsonが存在しない場合に初期ファイルを作成します。"""
     if not os.path.exists(STATE_FILE):
-        save_state(0.0, 0, 0, "NONE", "")
+        save_state("CLEAR", 0, "")
 
 def load_state():
     """
     state.json から前回の状態を取得します。
     【戻り値】
-    (last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start)
+    (weather_status, last_amedes_time, last_evening_alert_date, is_fresh_start)
     ※最終更新から1時間以上経過している場合は強制リセットフラグ(is_fresh_start=True)を返します。
     """
     if os.path.exists(STATE_FILE):
@@ -112,19 +110,17 @@ def load_state():
                     jst = timezone(timedelta(hours=9))
                     # 1時間以上実行が空いた場合はリセット処理
                     if (datetime.now(jst) - last_time).total_seconds() > 3600:
-                        return 0.0, 0, 0, "NONE", last_evening_alert_date, True
+                        return "CLEAR", 0, last_evening_alert_date, True
                 
                 return (
-                    float(data.get("last_rain_val", 0.0)),
-                    int(data.get("last_rank", 0)),
-                    int(data.get("last_notified_rank", 0)),
-                    data.get("last_notified_type", "NONE"),
+                    data.get("weather_status", "CLEAR"),
+                    data.get("last_amedes_time", 0),
                     last_evening_alert_date,
                     False
                 )
         except Exception:
-            return 0.0, 0, 0, "NONE", "", True
-    return 0.0, 0, 0, "NONE", "", True
+            return "CLEAR", 0, "", True
+    return "CLEAR", 0, "", True
 
 # =========================================================
 # 3. 座標計算・画像解析・予測データ算出＆グラフURL生成
@@ -631,17 +627,10 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         pass
 
 # =========================================================
-# 5. メインロジック（本番定期実行用 - 案1: textParagraph改行）
+# 5. メインロジック（本番定期実行用 - 最終完全版）
 # =========================================================
 def main():
-    """
-    本番運用時のエントリーポイント関数。
-    1. 環境変数チェックおよび動作可能時間判定（営業時間・祝日ガード）
-    2. 現在地の10分後予測雨量(nowc)を取得（早め対策ロジック）
-    3. 状態管理(state.json)のランク変化に基づき Google Chat 通知を判定・送信
-    4. 17時台の夜間雨量アサート条件を満たした場合の特別通知
-    """
-    print("=== [LOG] main() 実行開始 (案1) ===")
+    print("=== [LOG] main() 実行開始 ===")
     
     webhook_url = os.environ.get("CHAT_WEBHOOK_URL")
     lat_str = os.environ.get("TARGET_LAT")
@@ -656,42 +645,69 @@ def main():
 
     init_state_file()
 
-    # 稼働時間外判定（時間外の場合は前回雨量をリセットして正常終了）
+    # 稼働時間外判定（時間外の場合はそのまま正常終了）
     if not is_operating_time():
         print("[LOG] 判定: 稼働時間外（夜間・日曜日・正月三箇日）のためスキップします。")
-        if load_state()[0] > 0:
-            print("[LOG] 前回雨量状態を 0.0 にリセットします。")
-            save_state(0.0, 0, 0, "NONE", load_state()[4])
         sys.exit(0)
 
-    last_rain_val, last_rank, last_notified_rank, last_notified_type, last_evening_alert_date, is_fresh_start = load_state()
+    weather_status, last_amedes_time, last_evening_alert_date, is_fresh_start = load_state()
 
-    print(f"[LOG] 前回状態 (state.json): rain_val={last_rain_val}, rank={last_rank}, notified_rank={last_notified_rank}, notified_type='{last_notified_type}', last_evening_alert_date='{last_evening_alert_date}', is_fresh_start={is_fresh_start}")
-
+    print(f"[LOG] 前回状態 (state.json): weather_status='{weather_status}', last_amedes_time={last_amedes_time}, last_evening_alert_date='{last_evening_alert_date}', is_fresh_start={is_fresh_start}")
+    
     # 10分後の雨量予測データ（nowc）を取得（0hの判定データ）
     rain_desc, rain_val, color_code, current_rank, _, _ = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
 
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
     today_str = now.strftime("%Y-%m-%d")
+    now_unix = int(now.timestamp())
 
     print(f"[LOG] 現在時刻: {now.strftime('%Y-%m-%d %H:%M:%S')} JST")
     print(f"[LOG] 10分後予測: desc='{rain_desc}', val={rain_val}mm/h, rank={current_rank}")
 
     sent_amedes_in_this_run = False
 
-    # 条件1: スクリプト起動初回で雨が降っている場合
-    if is_fresh_start and current_rank >= 1:
-        print("[LOG] 分岐通過: 条件1 (初回起動かつ降雨あり) -> 通知はスキップし状態のみ保存します。")
-        save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
+    # ---------------------------------------------------------
+    # 通知判定ロジック
+    # ---------------------------------------------------------
+    # 条件0: スクリプト起動初回（1時間以上空いた場合）
+    if is_fresh_start:
+        if current_rank >= 3:
+            new_status = "HEAVY_RAIN"
+        elif current_rank >= 1:
+            new_status = "RAIN"
+        else:
+            new_status = "CLEAR"
+            
+        print(f"[LOG] 分岐通過: 条件0 (初回起動) -> 天候状態を '{new_status}' にセットし、通知をスキップします。")
+        save_state(new_status, 0, last_evening_alert_date)
 
-    # 条件2: 降り始めまたは雨量ランクが上昇した場合の「アメデス」通知
-    elif current_rank >= 1 and (last_notified_type != "RAINY" or current_rank > last_notified_rank):
-        print(f"[LOG] 分岐通過: 条件2 (「アメデス」通知対象) -> 前回タイプ='{last_notified_type}', 前回ランク={last_notified_rank} -> 今回ランク={current_rank}")
+    # 条件1: 強いアメデス（大雨へのエスカレーション）
+    elif current_rank >= 3 and weather_status != "HEAVY_RAIN":
+        print("[LOG] 分岐通過: 条件1 (「強いアメデス」通知対象)")
+        _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
+        val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+        # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
+        cum_15h_int = int(cum_15h + 0.5)
+        north_tank = int((cum_15h * 8.1) + 0.5)
+        south_tank = int((cum_15h * 6.1) + 0.5)
+        
+        formatted_text = (
+            f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+            f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
+            f"北分離槽 <b>{north_tank} m³</b><br>"
+            f"南分離槽 <b>{south_tank} m³</b><br>"
+        )
+        send_google_chat_card(webhook_url, lat, lon, "強いアメデス", formatted_text, ICON_RAINY, chart_url)
+        save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
+        sent_amedes_in_this_run = True
+
+    # 条件2: 通常アメデス（晴れから雨に変わった瞬間）
+    elif current_rank >= 1 and weather_status == "CLEAR":
+        print("[LOG] 分岐通過: 条件2 (「アメデス」通知対象)")
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
-        # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
         cum_15h_int = int(cum_15h + 0.5)
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
@@ -702,30 +718,41 @@ def main():
             f"北分離槽 <b>{north_tank} m³</b><br>"
             f"南分離槽 <b>{south_tank} m³</b>"
         )
-        
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
-        save_state(rain_val, current_rank, current_rank, "RAINY", last_evening_alert_date)
+        save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
-        print("[LOG] 「アメデス」カード通知を送信しました。")
 
-    # 条件3: 雨が止んだ場合の「雨上がりの予感」通知（変更なし）
-    elif current_rank == 0 and last_notified_type == "RAINY":
-        print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象) -> 雨が止みました。")
-        _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-        formatted_text = f"<font color=\"#78909c\">10分後は</font><font color=\"{color_code}\"><b>{rain_desc}</b></font>"
-        send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
-        save_state(0.0, 0, 0, "WEAK", last_evening_alert_date)
-        print("[LOG] 「雨上がりの予感」カード通知を送信しました。")
+    # 条件3: 雨上がりの予感（完全に止み、1時間後も晴れ、アメデスから30分経過）
+    elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"]:
+        if (now_unix - last_amedes_time) >= 1800:
+            # 30分経過したため、ここで初めて1時間後の予測データを取得
+            _, _, hourly_rain_list, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
+            forecast_1h_val = hourly_rain_list[0] if hourly_rain_list else 0.0
+            
+            if forecast_1h_val == 0.0:
+                print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
+                formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+                send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
+                save_state("CLEAR", 0, last_evening_alert_date)
+            else:
+                print("[LOG] 分岐通過: 条件3保留 -> 1時間後予測に降水があるため状態を維持します。")
+                save_state(weather_status, last_amedes_time, last_evening_alert_date)
+        else:
+            print("[LOG] 分岐通過: 条件3保留 -> アメデス送信から30分未満のため状態を維持します。")
+            save_state(weather_status, last_amedes_time, last_evening_alert_date)
 
+    # 条件4: それ以外（現状維持）
     else:
-        print("[LOG] 分岐通過: リアルタイム通知条件に合致しないため通知をスキップしました（状態のみ更新）。")
-        save_state(rain_val, current_rank, last_notified_rank, last_notified_type, last_evening_alert_date)
+        print("[LOG] 分岐通過: 静観 -> 状態に変化がないため通知をスキップしました。")
+        save_state(weather_status, last_amedes_time, last_evening_alert_date)
 
-    # 条件4: 夕方（17時0分〜10分）の「今宵アメデス」積算雨量警告通知
+    # ---------------------------------------------------------
+    # 条件5: 夕方（17時0分〜10分）の「今宵アメデス」積算雨量警告通知
+    # ---------------------------------------------------------
     is_17h_window = (now.hour == 17 and 0 <= now.minute <= 10)
     already_sent_today = (last_evening_alert_date == today_str)
     
-    print(f"[LOG] 17時判定チェック: 17時ウィンドウ内={is_17h_window} (hour={now.hour}, minute={now.minute}), 今順アメデス送信済={sent_amedes_in_this_run}, 本日17時通知済={already_sent_today}")
+    print(f"[LOG] 17時判定チェック: 17時ウィンドウ内={is_17h_window}, 今宵アメデス送信済={sent_amedes_in_this_run}, 本日17時通知済={already_sent_today}")
 
     if is_17h_window and not sent_amedes_in_this_run and not already_sent_today:
         print("[LOG] 17時判定通過: 夜間積算雨量を解析中...")
@@ -733,7 +760,6 @@ def main():
         print(f"[LOG] 17-8時積算雨量: {cum_15h} mm (閾値: {NIGHT_RAIN_THRESHOLD} mm)")
         
         if cum_15h >= NIGHT_RAIN_THRESHOLD:
-            # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
             cum_15h_int = int(cum_15h + 0.5)
             north_tank = int((cum_15h * 8.1) + 0.5)
             south_tank = int((cum_15h * 6.1) + 0.5)
@@ -744,7 +770,7 @@ def main():
                 f"南分離槽 <b>{south_tank} m³</b>"
             )
             send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
-            save_state(rain_val, current_rank, last_notified_rank, last_notified_type, today_str)
+            save_state(weather_status, last_amedes_time, today_str)
             print("[LOG] 「今宵アメデス」カード通知を送信しました。")
         else:
             print("[LOG] 積算雨量が閾値未満のため、「今宵アメデス」通知をスキップしました。")
@@ -780,7 +806,7 @@ def test_forced_notification():
         # テスト 1: 「アメデス」通知 (降り始め)
         # ---------------------------------------------------------
         print("\n--- [1/3] 「アメデス」通知ルートのテスト ---")
-        save_state(0.0, 0, 0, "NONE", "")
+        save_state("CLEAR", 0, "")
 
         original_fetch = fetch_10min_future_rain
         fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("やや強い雨", 15.0, "#1e88e5", 2, "20260101000000", "20260101001000")
@@ -793,7 +819,9 @@ def test_forced_notification():
         print("\n--- [2/3] 「雨上がりの予感」通知ルートのテスト ---")
         fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000")
 
-        save_state(10.0, 2, 2, "RAINY", "")
+        # 30分間のクールダウンを突破するため、1時間前（3600秒前）にアメデスを打ったことにする
+        past_time = int(time.time()) - 3600
+        save_state("RAIN", past_time, "")
         main()
 
         fetch_10min_future_rain = original_fetch
@@ -804,8 +832,8 @@ def test_forced_notification():
         print("\n--- [3/3] 「今宵アメデス」通知ルートのテスト ---")
         os.environ["NIGHT_RAIN_THRESHOLD"] = "0.0"
 
-        # 17時以外の時間帯でも main() 内の17時判定を通過させるため、時刻取得を17:05に固定モック化
-        save_state(0.0, 0, 0, "NONE", "1970-01-01")
+        # 17時以外の時間帯でも main() 内の17時判定を通過させるため、今日の日付を過去に固定モック化
+        save_state("CLEAR", 0, "1970-01-01")
         
         # main() 内で17時として動作させるためのテスト送信
         lat = float(os.environ.get("TARGET_LAT"))
