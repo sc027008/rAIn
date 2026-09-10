@@ -786,7 +786,8 @@ def test_forced_notification():
     TEST_CHAT_WEBHOOK_URL が設定されている場合のみ動作します。
     すべての通知タイプおよび本番の条件分岐を100%トレースします。
     """
-    global is_operating_time, fetch_10min_future_rain
+    # ★修正箇所：モック化する関数を global 宣言に追加
+    global is_operating_time, fetch_10min_future_rain, get_future_cumulative_rain_data
 
     print("=== 本番完全トレース テスト開始 ===")
 
@@ -823,10 +824,9 @@ def test_forced_notification():
         original_get_future = get_future_cumulative_rain_data
         get_future_cumulative_rain_data = lambda lat, lon, rain_val, zoom=ZOOM_LEVEL: (0.0, 0.0, [0.0]*15, "", [])
 
-        # 30分間のクールダウンを突破するため、1時間前にアメデスを打った状態にする
+        # 30分間のクールダウンを突破するため、1時間前（3600秒前）にアメデスを打ったことにする
         past_time = int(time.time()) - 3600
         save_state("RAIN", past_time, "")
-        
         main()
 
         # モックを元に戻す
@@ -867,6 +867,12 @@ def test_forced_notification():
             os.environ["CHAT_WEBHOOK_URL"] = original_webhook_url
         else:
             os.environ.pop("CHAT_WEBHOOK_URL", None)
+        
+        # 万が一のエラー中断時にも確実に元の関数を復元する
+        if 'original_fetch' in locals():
+            fetch_10min_future_rain = original_fetch
+        if 'original_get_future' in locals():
+            get_future_cumulative_rain_data = original_get_future
 
 def debug_nowc_complete(lat, lon, zoom=ZOOM_LEVEL):
     """
