@@ -361,105 +361,118 @@ def parse_jma_time(time_str):
 
 def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
     """
-    最新の basetime における「0分後〜10分後」の全コマ（0m, 5m, 10m）× 3x3px から
-    今後10分以内の最大雨量を算出します。（秘匿情報ログ出力防止版）
+    N1.json (実況) と N2.json (予測) を統合して解析します。
+    戻り値:
+    (desc, val, color_code, rank, basetime, validtime, is_clear_for_60min)
+    - 0, 5, 10分後のコマの中で最大の雨量データを通知用として返す。
+    - 10〜60分後のコマが全てランク0であれば is_clear_for_60min = True を返す。
     """
     headers = {"User-Agent": "Mozilla/5.0"}
-    # 秘匿情報（lat, lon）は出力せず、開始ログのみ記録
-    print(f"[LOG][NC10] 判定開始 (ズームレベル: {zoom})")
+    print(f"[LOG][NOWCAST] 判定開始 (ズームレベル: {zoom})")
 
     try:
-        url_target = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
-        res = requests.get(url_target, headers=headers, timeout=10)
+        url_n1 = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
+        url_n2 = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
         
-        if res.status_code != 200:
-            print(f"[LOG][NC10][FAIL] targetTimes_N1.json 取得失敗: HTTP {res.status_code}")
-            return "降水なし", 0.0, "#78909c", 0, None, None
+        res_n1 = requests.get(url_n1, headers=headers, timeout=10)
+        res_n2 = requests.get(url_n2, headers=headers, timeout=10)
+        
+        if res_n1.status_code != 200 or res_n2.status_code != 200:
+            print(f"[LOG][NOWCAST][FAIL] メタデータ取得失敗")
+            return "降水なし", 0.0, "#78909c", 0, None, None, False
 
-        target_times = res.json()
-        if not target_times:
-            print("[LOG][NC10][FAIL] targetTimes_N1.json が空データです")
-            return "降水なし", 0.0, "#78909c", 0, None, None
+        data_n1 = res_n1.json()
+        data_n2 = res_n2.json()
+        
+        if not data_n1 or not data_n2:
+            print("[LOG][NOWCAST][FAIL] メタデータが空です")
+            return "降水なし", 0.0, "#78909c", 0, None, None, False
 
-        base_dt = parse_jma_time(target_times[0]["basetime"])
-        target_limit_dt = base_dt + timedelta(minutes=10)
-        print(f"[LOG][NC10] 基準時間(basetime)={target_times[0]['basetime']} (対象範囲: +0分 〜 +10分以内)")
-
-        # 0分後(実況)〜10分後までのコマ(validtime <= basetime + 10分)を抽出
-        candidate_frames = []
-        for t in target_times:
-            v_dt = parse_jma_time(t["validtime"])
-            if base_dt <= v_dt <= target_limit_dt:
-                candidate_frames.append(t)
-
-        if not candidate_frames:
-            print("[LOG][NC10][WARN] 条件に適合する時間コマ(0〜10分後)が見つかりませんでした")
-            return "降水なし", 0.0, "#78909c", 0, None, None
-
-        print(f"[LOG][NC10] 抽出成功: 対象時間コマ数={len(candidate_frames)}件")
-
+        # N1の先頭(最新の実況=0分後)と、N2(5〜60分後)を結合
+        latest_n1 = data_n1[0]
+        base_dt = parse_jma_time(latest_n1["basetime"])
+        
+        # validtime順にソートするために結合
+        all_frames = [latest_n1] + data_n2
+        
+        target_0_10_frames = []
+        target_10_60_frames = []
+        
+        for frame in all_frames:
+            v_dt = parse_jma_time(frame["validtime"])
+            diff_min = int((v_dt - base_dt).total_seconds() / 60)
+            
+            if 0 <= diff_min <= 10:
+                target_0_10_frames.append(frame)
+            if 10 <= diff_min <= 60:
+                target_10_60_frames.append(frame)
+                
         xtile, ytile, px, py = latlon_to_tile(lat, lon, zoom)
-        # 座標変換成功のみを記録（具体的な数値 xtile, ytile, px, py は非表示）
-        print("[LOG][NC10] 該当タイルのグリッド座標計算完了")
 
-        max_rain_val = -1.0
-        best_result = ("降水なし", 0.0, "#78909c", 0, None, None)
-        success_tile_count = 0
-
-        # 該当するすべてのコマ(0m, 5m, 10m等)を巡回
-        for frame in candidate_frames:
+        # 画像解析用ヘルパー関数
+        def get_max_rank_for_frame(frame):
             basetime = frame["basetime"]
             validtime = frame["validtime"]
             element_name = frame.get("elements", ["hrpns"])[0] if frame.get("elements") else "hrpns"
-
             tile_url = f"https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{element_name}/{zoom}/{xtile}/{ytile}.png"
-            t_res = requests.get(tile_url, headers=headers, timeout=10)
             
-            if t_res.status_code != 200:
-                # URLに座標が含まれるため、URL自体は出力せず HTTP ステータスとコマ時間のみ記録
-                print(f"[LOG][NC10][WARN] タイル取得失敗 (HTTP {t_res.status_code}): validtime={validtime}")
-                continue
+            try:
+                t_res = requests.get(tile_url, headers=headers, timeout=5)
+                if t_res.status_code != 200:
+                    return None
+                
+                img = Image.open(BytesIO(t_res.content)).convert("RGBA")
+                frame_max_val = -1.0
+                frame_best_result = None
+                
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        nx, ny = px + dx, py + dy
+                        if 0 <= nx < img.width and 0 <= ny < img.height:
+                            pixel_color = img.getpixel((nx, ny))
+                            desc, val, color_code, rank = rgb_to_rainfall(pixel_color)
+                            
+                            # ランク優先で最大値を更新
+                            if frame_best_result is None or rank > frame_best_result[3] or (rank == frame_best_result[3] and val > frame_max_val):
+                                frame_max_val = val
+                                frame_best_result = (desc, val, color_code, rank, basetime, validtime)
+                                
+                return frame_best_result
+            except Exception:
+                return None
 
-            success_tile_count += 1
-            img = Image.open(BytesIO(t_res.content)).convert("RGBA")
-            
-            frame_max_val = -1.0
-            frame_best = None
+        # 0〜10分後の最大値取得（雨天判定用）
+        best_0_10 = ("降水なし", 0.0, "#78909c", 0, None, None)
+        
+        for frame in target_0_10_frames:
+            result = get_max_rank_for_frame(frame)
+            if result:
+                # ランクが最も高いものを採用。ランクが同じなら降水量が大きいものを採用。
+                if result[3] > best_0_10[3] or (result[3] == best_0_10[3] and result[1] > best_0_10[1]):
+                    best_0_10 = result
 
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    nx, ny = px + dx, py + dy
-                    if 0 <= nx < img.width and 0 <= ny < img.height:
-                        pixel_color = img.getpixel((nx, ny))
-                        desc, val, color_code, rank = rgb_to_rainfall(pixel_color)
-                        
-                        if val > frame_max_val:
-                            frame_max_val = val
-                            frame_best = (desc, val, color_code, rank, basetime, validtime)
+        # 10〜60分後がすべてランク0か判定（雨上がり判定用）
+        is_clear_for_60min = True
+        for frame in target_10_60_frames:
+            result = get_max_rank_for_frame(frame)
+            if result:
+                rank = result[3]
+                if rank > 0:
+                    is_clear_for_60min = False
+                    break  # 1つでも雨雲があれば判定終了
+            else:
+                # 取得失敗時は安全側に倒して雨上がりと断定しない
+                is_clear_for_60min = False
+                break
 
-                        if val > max_rain_val:
-                            max_rain_val = val
-                            best_result = (desc, val, color_code, rank, basetime, validtime)
+        desc, val, color_code, rank, basetime, validtime = best_0_10
+        print(f"[LOG][NOWCAST] 0-10分最大ランク: {rank} ({val}mm/h), 10-60分完全晴れ判定: {is_clear_for_60min}")
+        return desc, val, color_code, rank, basetime, validtime, is_clear_for_60min
 
-            print(f"[LOG][NC10][TILE-OK] コマ: {validtime} -> 3x3最大値: {frame_max_val} mm/h ({frame_best[0]})")
-
-        if success_tile_count == 0:
-            print("[LOG][NC10][FAIL] 全対象コマの画像タイル取得に失敗しました (全て HTTP 200 以外)")
-            return "降水なし", 0.0, "#78909c", 0, None, None
-
-        if max_rain_val == 0.0:
-            print(f"[LOG][NC10][RESULT] タイル取得成功({success_tile_count}/{len(candidate_frames)}枚) - 3x3全領域で降水ピクセルなし(0.0 mm/h)")
-        else:
-            print(f"[LOG][NC10][RESULT] 最終判定結果: {best_result[1]} mm/h ({best_result[0]}), validtime={best_result[5]}")
-
-        return best_result
-
-    except requests.exceptions.Timeout:
-        print("[LOG][NC10][EXCEPT] ナウキャスト通信タイムアウトが発生しました (10秒超過)")
     except Exception as e:
-        print(f"[LOG][NC10][EXCEPT] ナウキャスト処理中に予期せぬエラーが発生しました: {e}")
+        print(f"[LOG][NOWCAST][EXCEPT] 処理中に予期せぬエラー: {e}")
 
-    return "降水なし", 0.0, "#78909c", 0, None, None
+    return "降水なし", 0.0, "#78909c", 0, None, None, False
 
 def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=ZOOM_LEVEL):
     """
@@ -655,7 +668,7 @@ def main():
     print(f"[LOG] 前回状態 (state.json): weather_status='{weather_status}', last_amedes_time={last_amedes_time}, last_evening_alert_date='{last_evening_alert_date}', is_fresh_start={is_fresh_start}")
     
     # 10分後の雨量予測データ（nowc）を取得（0hの判定データ）
-    rain_desc, rain_val, color_code, current_rank, _, _ = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
+    rain_desc, rain_val, color_code, current_rank, _, _, is_clear_for_60min = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
 
     jst = timezone(timedelta(hours=9))
     now = datetime.now(jst)
@@ -722,20 +735,20 @@ def main():
         save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
 
-    # 条件3: 雨上がりの予感（完全に止み、1時間後も晴れ、アメデスから30分経過）
+    # 条件3: 雨上がりの予感（完全に止み、10〜60分後も全てランク0、アメデスから30分経過）
     elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"]:
         if (now_unix - last_amedes_time) >= 1800:
-            # 30分経過したため、ここで初めて1時間後の予測データを取得
-            _, _, hourly_rain_list, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-            forecast_1h_val = hourly_rain_list[0] if hourly_rain_list else 0.0
-            
-            if forecast_1h_val == 0.0:
+            # rasrfの1時間後予測ではなく、ナウキャストの60分完全晴れ判定(is_clear_for_60min)を使用する
+            if is_clear_for_60min:
                 print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
+                # グラフ描画用にrasrfデータを取得(判定には使わない)
+                _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
+                
                 formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
                 send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
                 save_state("CLEAR", 0, last_evening_alert_date)
             else:
-                print("[LOG] 分岐通過: 条件3保留 -> 1時間後予測に降水があるため状態を維持します。")
+                print("[LOG] 分岐通過: 条件3保留 -> 今後60分以内に降水予測があるため状態を維持します。")
                 save_state(weather_status, last_amedes_time, last_evening_alert_date)
         else:
             print("[LOG] 分岐通過: 条件3保留 -> アメデス送信から30分未満のため状態を維持します。")
@@ -810,15 +823,14 @@ def test_forced_notification():
         save_state("CLEAR", 0, "")
 
         original_fetch = fetch_10min_future_rain
-        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("やや強い雨", 15.0, "#1e88e5", 2, "20260101000000", "20260101001000")
-
+        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("やや強い雨", 15.0, "#1e88e5", 2, "20260101000000", "20260101001000", False)
         main()
 
         # ---------------------------------------------------------
         # テスト 2: 「雨上がりの予感」通知 (雨上がり)
         # ---------------------------------------------------------
         print("\n--- [2/3] 「雨上がりの予感」通知ルートのテスト ---")
-        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000")
+        fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000", True)
 
         # 1時間後も降水なし(0.0)のダミーデータを返すように一時差し替え
         original_get_future = get_future_cumulative_rain_data
@@ -956,6 +968,32 @@ def debug_nowc_complete(lat, lon, zoom=ZOOM_LEVEL):
         print(f"実行中例外: {e}")
     print("=================================================\n")
 
+def debug_fetch_10min_future_rain_logic():
+    """
+    N1/N2結合ロジックが正しく動作し、is_clear_for_60min が算出されるか検証するデバッグ関数。
+    """
+    print("\n=== [DEBUG] fetch_10min_future_rain 動作検証テスト ===")
+    lat_str = os.environ.get("TARGET_LAT")
+    lon_str = os.environ.get("TARGET_LON")
+    
+    if not lat_str or not lon_str:
+        print("エラー: TARGET_LAT または TARGET_LON が設定されていません。")
+        return
+        
+    lat = float(lat_str)
+    lon = float(lon_str)
+    
+    desc, val, color_code, rank, basetime, validtime, is_clear_for_60min = fetch_10min_future_rain(lat, lon, ZOOM_LEVEL)
+    
+    print(f"[DEBUG 結果]")
+    print(f" - 状態: {desc}")
+    print(f" - 雨量: {val} mm/h")
+    print(f" - ランク: {rank}")
+    print(f" - basetime: {basetime}")
+    print(f" - validtime: {validtime}")
+    print(f" - 60分間完全晴れ判定 (is_clear_for_60min): {is_clear_for_60min}")
+    print("====================================================\n")
+
 # =========================================================
 # 7. スクリプト実行エントリーポイント
 # =========================================================
@@ -968,4 +1006,5 @@ if __name__ == "__main__":
     # main()
     
     # 【テスト検証モード】（時間・曜日・降水量条件を全バイパスしてチャット通知を強制送信、送り先はテストチャット）
+    debug_fetch_10min_future_rain_logic()
     test_forced_notification()
