@@ -819,12 +819,19 @@ def test_forced_notification():
         print("\n--- [2/3] 「雨上がりの予感」通知ルートのテスト ---")
         fetch_10min_future_rain = lambda lat, lon, zoom=ZOOM_LEVEL: ("降水なし", 0.0, "#78909c", 0, "20260101000000", "20260101001000")
 
-        # 30分間のクールダウンを突破するため、1時間前（3600秒前）にアメデスを打ったことにする
+        # 1時間後も降水なし(0.0)のダミーデータを返すように一時差し替え
+        original_get_future = get_future_cumulative_rain_data
+        get_future_cumulative_rain_data = lambda lat, lon, rain_val, zoom=ZOOM_LEVEL: (0.0, 0.0, [0.0]*15, "", [])
+
+        # 30分間のクールダウンを突破するため、1時間前にアメデスを打った状態にする
         past_time = int(time.time()) - 3600
         save_state("RAIN", past_time, "")
+        
         main()
 
+        # モックを元に戻す
         fetch_10min_future_rain = original_fetch
+        get_future_cumulative_rain_data = original_get_future
 
         # ---------------------------------------------------------
         # テスト 3: 「今宵アメデス」通知 (17時条件を擬似通過)
