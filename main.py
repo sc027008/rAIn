@@ -188,7 +188,7 @@ def get_color_for_value(val):
     if val > 0.0:   return "#90a4ae"
     return "#e0e0e0"
 
-def get_nice_step(raw_max, steps=5):
+def get_nice_step(raw_max, steps=4):
     """グラフY軸の目盛り間隔（stepSize）をキリの良い数値に調整します。"""
     raw_step = raw_max / steps
     nice_steps = [5, 10, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
@@ -286,7 +286,7 @@ def generate_chart_url(hourly_rain_list, current_rain_val=0.0):
     max_bar = max(all_rain) if all_rain else 0.0
     max_cum = cumulative_rain[-1] if cumulative_rain else 0.0
 
-    steps = 5
+    steps = 4
     step_y1 = get_nice_step(max(max_bar * 1.35, 10.0), steps)
     y1_max = step_y1 * steps
 
