@@ -717,7 +717,7 @@ def main():
         south_tank = int((cum_15h * 6.1) + 0.5)
         
         formatted_text = (
-            f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+            # f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
             f"北分離 <b>{north_tank} m³</b>　"
             f"南分離 <b>{south_tank} m³</b>"
@@ -737,7 +737,7 @@ def main():
         south_tank = int((cum_15h * 6.1) + 0.5)
         
         formatted_text = (
-            f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
+            # f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
             f"北分離 <b>{north_tank} m³</b>　"
             f"南分離 <b>{south_tank} m³</b>"
@@ -755,7 +755,8 @@ def main():
                 # グラフ描画用にrasrfデータを取得(判定には使わない)
                 _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
                 
-                formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+                # formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+                formatted_text = ""
                 send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
                 save_state("CLEAR", 0, last_evening_alert_date)
             else:
