@@ -223,7 +223,7 @@ def cleanup_old_charts(charts_dir="charts", retention_hours=168):
 
 def push_chart_to_github(output_path, filename):
     """
-    生成された画像ファイルおよび state.json を Git にコミット＆プッシュし、
+    生成された画像ファイルを Git にコミット＆プッシュし、
     CDN (raw.githubusercontent.com) に反映されるまで待機して URL を返します。
     """
     repo = os.environ.get("GITHUB_REPOSITORY")
@@ -232,16 +232,16 @@ def push_chart_to_github(output_path, filename):
         return None
 
     try:
+        # 1. Git コミット & プッシュを実行
         subprocess.run(["git", "config", "--local", "user.name", "github-actions[bot]"], check=True)
         subprocess.run(["git", "config", "--local", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-        
-        # state.json と生成された画像(charts/)を一括で add
         subprocess.run(["git", "add", "-A", "state.json", "charts/"], check=True)
         
         status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
         if status.stdout.strip():
-            subprocess.run(["git", "commit", "-m", f"Chore: Upload {filename} and update state [skip ci]"], check=True)
+            subprocess.run(["git", "commit", "-m", f"Chore: Upload {filename} [skip ci]"], check=True)
             
+            # リモート一時障害や同時実行の競合に備え、最大3回リトライする
             push_success = False
             for attempt in range(1, 4):
                 try:
@@ -251,13 +251,14 @@ def push_chart_to_github(output_path, filename):
                     print(f"Git push 完了: {filename} (試行回数: {attempt})")
                     break
                 except subprocess.CalledProcessError as push_err:
-                    print(f"警告: Git push 失敗 ({attempt}/3回目): {push_err}. 2秒後に再試行します...")
-                    time.sleep(2)
+                    print(f"警告: Git push 失敗 ({attempt}/3回目): {push_err}. 3秒後に再試行します...")
+                    time.sleep(3)
 
             if not push_success:
-                print("エラー: 3回のリトライ後も Git push に失敗しました。")
+                print("エラー: 3回のリトライ後も Git push に失敗しました。CDN反映処理をスキップします。")
                 return None
 
+        # 2. CDN 反映をポーリング確認 (最大 60 秒待機)
         raw_url = f"https://raw.githubusercontent.com/{repo}/{branch}/charts/{filename}"
         print("CDNへの画像反映を確認中...")
         for i in range(60):
@@ -271,7 +272,7 @@ def push_chart_to_github(output_path, filename):
             time.sleep(1)
 
         print("警告: CDNへの反映が60秒以内に完了しなかったため、画像URLを破棄して通知のみ送信します。")
-        return None 
+        return None  # 404画像の送信によるカード空欄化を防ぐため None を返す
 
     except Exception as e:
         print(f"Git push または CDN確認エラー: {e}")
