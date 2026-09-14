@@ -743,7 +743,7 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 hの積算）"
+        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 h積算）"
         send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
@@ -757,7 +757,7 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 hの積算）"
+        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 h積算）"
         send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
