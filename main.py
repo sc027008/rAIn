@@ -603,7 +603,7 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=ZOOM_LE
 
 def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
     """Google Chat Webhook API を利用して、カード形式（CardsV2）の通知メッセージを送信します。"""
-    jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#elements:slmcs&rasrf/lat:{lat}/lon:{lon}/zoom:11"
+    jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#elements:rasrf&slmcs&slmcs_all/lat:{lat}/lon:{lon}/zoom:11"
     activated_sludge_url = os.environ.get("ACTIVATED_SLUDGE_URL", "")
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
@@ -622,12 +622,12 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
         "buttonList": {
             "buttons": [
                 {
-                    "text": "<b>雨雲レーダー</b>を開く🌧️",
+                    "text": "<b>雨雲レーダー</b>🌧️",
                     "color": {"red": 0.82, "green": 0.90, "blue": 0.98, "alpha": 1.0},
                     "onClick": {"openLink": {"url": jma_url}}
                 },
                 {
-                    "text": "活性汚泥　見えるか❔",
+                    "text": "活性汚泥 見えるか❔",
                     "color": {"red": 0.90, "green": 0.95, "blue": 0.88, "alpha": 1.0},
                     "onClick": {"openLink": {"url": activated_sludge_url}}
                 }
@@ -719,8 +719,8 @@ def main():
         formatted_text = (
             f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
-            f"北分離槽 <b>{north_tank} m³</b><br>"
-            f"南分離槽 <b>{south_tank} m³</b><br>"
+            f"北分離 <b>{north_tank} m³</b>　"
+            f"南分離 <b>{south_tank} m³</b>"
         )
         send_google_chat_card(webhook_url, lat, lon, "強いアメデス", formatted_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
@@ -739,8 +739,8 @@ def main():
         formatted_text = (
             f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
-            f"北分離槽 <b>{north_tank} m³</b><br>"
-            f"南分離槽 <b>{south_tank} m³</b>"
+            f"北分離 <b>{north_tank} m³</b>　"
+            f"南分離 <b>{south_tank} m³</b>"
         )
         send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
@@ -790,8 +790,8 @@ def main():
 
             formatted_text = (
                 f"17～翌8時の積算 <b>{cum_15h_int} mm</b><br>"
-                f"北分離槽 <b>{north_tank} m³</b><br>"
-                f"南分離槽 <b>{south_tank} m³</b>"
+                f"北分離 <b>{north_tank} m³</b>　"
+                f"南分離 <b>{south_tank} m³</b>"
             )
             send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(weather_status, last_amedes_time, today_str)
