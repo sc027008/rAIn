@@ -607,7 +607,11 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     activated_sludge_url = os.environ.get("ACTIVATED_SLUDGE_URL", "")
     unique_card_id = f"rainAlert_{uuid.uuid4().hex[:8]}"
     
-    widgets = [{"textParagraph": {"text": formatted_text}}]
+    widgets = []
+    
+    # ★変更点: formatted_text が空("")でない場合のみテキストウィジェットを追加
+    if formatted_text:
+        widgets.append({"textParagraph": {"text": formatted_text}})
     
     if chart_url:
         widgets.append({
@@ -690,6 +694,23 @@ def main():
     print(f"[LOG] 10分後予測: desc='{rain_desc}', val={rain_val}mm/h, rank={current_rank}")
 
     sent_amedes_in_this_run = False
+    val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+
+    # ---------------------------------------------------------
+    # ★追加点: 通知タイトルの動的生成
+    # ---------------------------------------------------------
+    if rain_val >= 80.0:
+        title_prefix = "猛烈なアメデス"
+    elif rain_val >= 65.0:
+        title_prefix = "非常に激しいアメデス"
+    elif rain_val >= 40.0:
+        title_prefix = "激しいアメデス"
+    elif rain_val >= 25.0:
+        title_prefix = "強いアメデス"
+    else:
+        title_prefix = "アメデス"
+    
+    dynamic_title = f"{title_prefix}　{val_str} mm/h"
 
     # ---------------------------------------------------------
     # 通知判定ロジック
@@ -710,19 +731,19 @@ def main():
     elif current_rank >= 3 and weather_status != "HEAVY_RAIN":
         print("[LOG] 分岐通過: 条件1 (「強いアメデス」通知対象)")
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-        val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
+        
         # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
         cum_15h_int = int(cum_15h + 0.5)
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
+        # 本文から現在雨量を削除
         formatted_text = (
-            # f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
             f"北分離 <b>{north_tank} m³</b>　"
             f"南分離 <b>{south_tank} m³</b>"
         )
-        send_google_chat_card(webhook_url, lat, lon, "強いアメデス", formatted_text, ICON_RAINY, chart_url)
+        send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
 
@@ -730,32 +751,29 @@ def main():
     elif current_rank >= 1 and weather_status == "CLEAR":
         print("[LOG] 分岐通過: 条件2 (「アメデス」通知対象)")
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-        val_str = str(rain_val) if rain_val < 1.0 else str(int(rain_val))
         
         cum_15h_int = int(cum_15h + 0.5)
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
+        # 本文から現在雨量を削除
         formatted_text = (
-            # f"<font color=\"#78909c\">10分後に</font><font color=\"{color_code}\"><b>{rain_desc}</b> {val_str} mm/h</font><br>"
             f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
             f"北分離 <b>{north_tank} m³</b>　"
             f"南分離 <b>{south_tank} m³</b>"
         )
-        send_google_chat_card(webhook_url, lat, lon, "アメデス", formatted_text, ICON_RAINY, chart_url)
+        send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
 
     # 条件3: 雨上がりの予感（完全に止み、10〜60分後も全てランク0、アメデスから30分経過）
     elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"]:
         if (now_unix - last_amedes_time) >= 1800:
-            # rasrfの1時間後予測ではなく、ナウキャストの60分完全晴れ判定(is_clear_for_60min)を使用する
             if is_clear_for_60min:
                 print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
-                # グラフ描画用にrasrfデータを取得(判定には使わない)
                 _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
                 
-                # formatted_text = f"<font color=\"{color_code}\"><b>{rain_desc}</b></font>"
+                # ★雨上がりの予感は本文を完全に空にする
                 formatted_text = ""
                 send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
                 save_state("CLEAR", 0, last_evening_alert_date)
