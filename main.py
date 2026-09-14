@@ -609,10 +609,15 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     
     widgets = []
     
-    # ★変更点: formatted_text が空("")でない場合のみテキストウィジェットを追加
+    # 1. テキストウィジェットの追加
     if formatted_text:
         widgets.append({"textParagraph": {"text": formatted_text}})
     
+    # テキストとグラフ画像の両方が存在する場合、間に区切り線(divider)を挿入する
+    if formatted_text and chart_url:
+        widgets.append({"divider": {}})
+        
+    # 2. グラフ画像ウィジェットの追加
     if chart_url:
         widgets.append({
             "image": {
@@ -622,6 +627,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
             }
         })
         
+    # 3. 横並びボタンウィジェットの追加
     widgets.append({
         "buttonList": {
             "buttons": [
