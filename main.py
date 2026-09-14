@@ -743,12 +743,7 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        # 本文から現在雨量を削除
-        formatted_text = (
-            f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
-            f"北分離 <b>{north_tank} m³</b>　"
-            f"南分離 <b>{south_tank} m³</b>"
-        )
+        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 hの積算）"
         send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
@@ -762,12 +757,7 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        # 本文から現在雨量を削除
-        formatted_text = (
-            f"今後15時間の積算 <b>{cum_15h_int} mm</b><br>"
-            f"北分離 <b>{north_tank} m³</b>　"
-            f"南分離 <b>{south_tank} m³</b>"
-        )
+        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 hの積算）"
         send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
@@ -813,11 +803,7 @@ def main():
             north_tank = int((cum_15h * 8.1) + 0.5)
             south_tank = int((cum_15h * 6.1) + 0.5)
 
-            formatted_text = (
-                f"17～翌8時の積算 <b>{cum_15h_int} mm</b><br>"
-                f"北分離 <b>{north_tank} m³</b>　"
-                f"南分離 <b>{south_tank} m³</b>"
-            )
+            formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（17～翌8時の積算）"
             send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
             save_state(weather_status, last_amedes_time, today_str)
             print("[LOG] 「今宵アメデス」カード通知を送信しました。")
