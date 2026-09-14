@@ -638,7 +638,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
                 },
                 {
                     "text": "活性汚泥 見えるか❔",
-                    "color": {"red": 0.90, "green": 0.95, "blue": 0.88, "alpha": 1.0},
+                    "color": {"red": 0.94, "green": 0.88, "blue": 0.80, "alpha": 1.0},
                     "onClick": {"openLink": {"url": activated_sludge_url}}
                 }
             ]
