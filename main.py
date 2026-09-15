@@ -803,7 +803,7 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        main_text = f"北分離 <b>{north_tank}</b> 南分離 <b>{south_tank} m³</b>"
+        main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
         bottom_text = "˗ˏˋ 今後 15 h 積算 ˊˎ˗"
         
         send_google_chat_card(webhook_url, lat, lon, colored_dynamic_title, main_text, bottom_text, ICON_RAINY, chart_url)
