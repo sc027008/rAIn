@@ -70,8 +70,8 @@ jobs:
                 echo "Push 成功 ($i 回目の試行)"
                 break
               fi
-              echo "Push 失敗 ($i/3)。3秒後にリトライします..."
-              sleep 3
+              echo "Push 失敗 ($i/3)。10秒後にリトライします..."
+              sleep 10
             done
             
             if [ "$success" = false ]; then
