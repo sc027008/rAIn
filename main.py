@@ -251,8 +251,8 @@ def push_chart_to_github(output_path, filename):
                     print(f"Git push 完了: {filename} (試行回数: {attempt})")
                     break
                 except subprocess.CalledProcessError as push_err:
-                    print(f"警告: Git push 失敗 ({attempt}/3回目): {push_err}. 3秒後に再試行します...")
-                    time.sleep(3)
+                    print(f"警告: Git push 失敗 ({attempt}/3回目): {push_err}. 10秒後に再試行します...")
+                    time.sleep(10)
 
             if not push_success:
                 print("エラー: 3回のリトライ後も Git push に失敗しました。CDN反映処理をスキップします。")
