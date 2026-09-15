@@ -601,7 +601,34 @@ def get_future_cumulative_rain_data(lat, lon, current_rain_val=0.0, zoom=ZOOM_LE
             })
         return 0.0, 0.0, [0.0]*15, "", details
 
-def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, icon_url, chart_url=None):
+def get_colored_title(title_text, rain_mmh=0):
+    """条件に応じてタイトル文字列に色をつける（ライト/ダークモード両対応版）"""
+    
+    # 特殊条件1: 雨上がりの予感（色指定なしでデフォルトの文字色をそのまま使用）
+    if "雨上がり" in title_text:
+        return title_text
+    
+    # 特殊条件2: 今宵アメデス（弱い雨と同じ深めの青）
+    elif "今宵" in title_text:
+        color_hex = "#1976D2"
+    
+    # 通常のアメデス（WCAGコントラストに配慮した中間色パレット）
+    else:
+        if rain_mmh >= 80:
+            color_hex = "#AB47BC" # 猛烈な雨（明るめの中間パープル）
+        elif rain_mmh >= 50:
+            color_hex = "#E53935" # 非常に激しい雨（警告レッド）
+        elif rain_mmh >= 30:
+            color_hex = "#E65100" # 激しい雨（ディープオレンジ）
+        elif rain_mmh >= 20:
+            color_hex = "#D4A017" # 強い雨（ゴールド寄りイエロー）
+        else:
+            color_hex = "#1976D2" # 弱い雨（深めの青）
+
+    # HTMLタグでラップして返す
+    return f"<font color='{color_hex}'>{title_text}</font>"
+
+def send_google_chat_card(webhook_url, lat, lon, title_text, main_text, bottom_text, icon_url, chart_url=None):
     """Google Chat Webhook API を利用して、カード形式（CardsV2）の通知メッセージを送信します。"""
     jma_url = f"https://www.jma.go.jp/bosai/kaikotan/#elements:rasrf&slmcs&slmcs_all/lat:{lat}/lon:{lon}/zoom:11"
     activated_sludge_url = os.environ.get("ACTIVATED_SLUDGE_URL", "")
@@ -609,12 +636,27 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, formatted_text, ico
     
     widgets = []
     
-    # 1. テキストウィジェットの追加
-    if formatted_text:
-        widgets.append({"textParagraph": {"text": formatted_text}})
-    
-    # テキストとグラフ画像の両方が存在する場合、間に区切り線(divider)を挿入する
-    if formatted_text and chart_url:
+    # 1. ヘッダー代わりの decoratedText の追加
+    if main_text:
+        # 通常のアメデス・今宵アメデスの場合
+        widgets.append({
+            "decoratedText": {
+                "icon": {"iconUrl": icon_url},
+                "topLabel": title_text,
+                "text": main_text,
+                "bottomLabel": bottom_text,
+                "wrapText": True
+            }
+        })
+        widgets.append({"divider": {}})
+    else:
+        # main_textが空（雨上がりの予感）の場合は、シンプルにタイトルだけを強調表示
+        widgets.append({
+            "decoratedText": {
+                "icon": {"iconUrl": icon_url},
+                "text": f"<b>{title_text}</b>"
+            }
+        })
         widgets.append({"divider": {}})
         
     # 2. グラフ画像ウィジェットの追加
@@ -718,6 +760,9 @@ def main():
     
     dynamic_title = f"{title_prefix}　{val_str} mm/h"
 
+    # ★追加: タイトルの動的色付け処理（新カラーパレット適用）
+    colored_dynamic_title = get_colored_title(dynamic_title, rain_val)
+
     # ---------------------------------------------------------
     # 通知判定ロジック
     # ---------------------------------------------------------
@@ -738,13 +783,14 @@ def main():
         print("[LOG] 分岐通過: 条件1 (「強いアメデス」通知対象)")
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         
-        # Pythonの偶数丸めを回避し、一般的な四捨五入を強制適用
         cum_15h_int = int(cum_15h + 0.5)
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 h積算）"
-        send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
+        main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
+        bottom_text = "˗ˏˋ 今後 15 h 積算 ˊˎ˗"
+        
+        send_google_chat_card(webhook_url, lat, lon, colored_dynamic_title, main_text, bottom_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
 
@@ -757,8 +803,10 @@ def main():
         north_tank = int((cum_15h * 8.1) + 0.5)
         south_tank = int((cum_15h * 6.1) + 0.5)
         
-        formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（今後15 h積算）"
-        send_google_chat_card(webhook_url, lat, lon, dynamic_title, formatted_text, ICON_RAINY, chart_url)
+        main_text = f"北分離 <b>{north_tank}</b> 南分離 <b>{south_tank} m³</b>"
+        bottom_text = "˗ˏˋ 今後 15 h 積算 ˊˎ˗"
+        
+        send_google_chat_card(webhook_url, lat, lon, colored_dynamic_title, main_text, bottom_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
         sent_amedes_in_this_run = True
 
@@ -769,16 +817,10 @@ def main():
                 print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
                 _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
                 
-                # ★雨上がりの予感は本文を完全に空にする
-                formatted_text = ""
-                send_google_chat_card(webhook_url, lat, lon, "雨上がりの予感", formatted_text, ICON_RAINBOW, chart_url)
+                # 色付けなしのタイトルのみを送信
+                colored_rainbow_title = get_colored_title("雨上がりの予感")
+                send_google_chat_card(webhook_url, lat, lon, colored_rainbow_title, "", "", ICON_RAINBOW, chart_url)
                 save_state("CLEAR", 0, last_evening_alert_date)
-            else:
-                print("[LOG] 分岐通過: 条件3保留 -> 今後60分以内に降水予測があるため状態を維持します。")
-                save_state(weather_status, last_amedes_time, last_evening_alert_date)
-        else:
-            print("[LOG] 分岐通過: 条件3保留 -> アメデス送信から30分未満のため状態を維持します。")
-            save_state(weather_status, last_amedes_time, last_evening_alert_date)
 
     # 条件4: それ以外（現状維持）
     else:
@@ -803,8 +845,12 @@ def main():
             north_tank = int((cum_15h * 8.1) + 0.5)
             south_tank = int((cum_15h * 6.1) + 0.5)
 
-            formatted_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>（17～翌8時の積算）"
-            send_google_chat_card(webhook_url, lat, lon, "今宵アメデス", formatted_text, ICON_NIGHT_RAIN, chart_url)
+            main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
+            bottom_text = "˗ˏˋ 17～翌8時 積算 ˊˎ˗"
+            
+            colored_night_title = get_colored_title("今宵アメデス")
+            
+            send_google_chat_card(webhook_url, lat, lon, colored_night_title, main_text, bottom_text, ICON_NIGHT_RAIN, chart_url)
             save_state(weather_status, last_amedes_time, today_str)
             print("[LOG] 「今宵アメデス」カード通知を送信しました。")
         else:
