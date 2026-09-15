@@ -680,7 +680,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, main_text, bottom_t
                 },
                 {
                     "text": "活性汚泥 見えるか❔",
-                    "color": {"red": 0.94, "green": 0.88, "blue": 0.80, "alpha": 1.0},
+                    "color": {"red": 0.85, "green": 0.93, "blue": 0.85, "alpha": 1.0},
                     "onClick": {"openLink": {"url": activated_sludge_url}}
                 }
             ]
@@ -795,7 +795,7 @@ def main():
         sent_amedes_in_this_run = True
 
     # 条件2: 通常アメデス（晴れから雨に変わった瞬間）
-    elif current_rank >= 1 and weather_status == "CLEAR":
+    elif current_rank >= 1 and weather_status == "CLEAR" and last_evening_alert_date != today_str:
         print("[LOG] 分岐通過: 条件2 (「アメデス」通知対象)")
         _, cum_15h, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
         
@@ -811,7 +811,7 @@ def main():
         sent_amedes_in_this_run = True
 
     # 条件3: 雨上がりの予感（完全に止み、10〜60分後も全てランク0、アメデスから30分経過）
-    elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"]:
+    elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"] and last_evening_alert_date != today_str:
         if (now_unix - last_amedes_time) >= 1800:
             if is_clear_for_60min:
                 print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
