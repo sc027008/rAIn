@@ -107,7 +107,7 @@ if (!fs.existsSync(dir)) {
 }
 
 // --- 4. GIFEncoder と Canvas の初期化 ---
-const width = 512;
+const width = 480;
 const height = 176;
 
 const encoder = new GIFEncoder(width, height);
