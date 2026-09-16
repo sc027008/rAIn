@@ -39,7 +39,7 @@ const sourceTextPlugin = {
     const { ctx, chartArea, height } = chart;
     ctx.save();
 
-    ctx.font = 'bold 14px "LINE Seed JP"';
+    ctx.font = 'bold 12px "LINE Seed JP"';
     ctx.fillStyle = '#999999';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
@@ -59,7 +59,7 @@ const customTitlePlugin = {
     const { ctx, chartArea } = chart;
     ctx.save();
 
-    ctx.font = 'bold 21px "LINE Seed JP"';
+    ctx.font = 'bold 17px "LINE Seed JP"';
     ctx.textBaseline = 'top';
 
     const y = 8;
@@ -107,8 +107,8 @@ if (!fs.existsSync(dir)) {
 }
 
 // --- 4. GIFEncoder と Canvas の初期化 ---
-const width = 512;
-const height = 224;
+const width = 480;
+const height = 210;
 
 const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
@@ -192,9 +192,9 @@ for (let i = 1; i <= totalFrames; i++) {
             align: 'end',
             offset: -2,
             color: '#111111',
-            font: { size: 22, family: 'Open Sans Condensed Bold', weight: 'bold' },
+            font: { size: 17, family: 'Open Sans Condensed Bold', weight: 'bold' },
             textStrokeColor: '#ffffff',
-            textStrokeWidth: 6,
+            textStrokeWidth: 5,
             formatter: (value) => value
           }
         },
@@ -226,9 +226,9 @@ for (let i = 1; i <= totalFrames; i++) {
             borderColor: '#ffffff',
             borderWidth: 4, // 3〜4px 程度にすると外側へのくっきりした白枠になります
             
-            borderRadius: 8,
-            padding: { top: 3, bottom: 4, left: 7, right: 7 },
-            font: { size: 23, family: 'Open Sans Condensed Bold', weight: 'bold'},
+            borderRadius: 6,
+            padding: { top: 2, bottom: 3, left: 6, right: 6 },
+            font: { size: 18, family: 'Open Sans Condensed Bold', weight: 'bold'},
             formatter: (value) => Math.round(value)
           }
         },
@@ -268,7 +268,7 @@ for (let i = 1; i <= totalFrames; i++) {
       },
       layout: {
         padding: {
-          top: 50,
+          top: 40,
           left: 10,
           right: 10,
           bottom: 5
@@ -281,13 +281,13 @@ for (let i = 1; i <= totalFrames; i++) {
             display: true,
             text: '時\u200A間\u200A後',
             color: '#555555',
-            font: { size: 21, family: 'LINE Seed JP', weight: 'bold' }
+            font: { size: 17, family: 'LINE Seed JP', weight: 'bold' }
           },
           ticks: {
             // ★ stepSize ではなく callback で 3 おきにフィルター
             callback: (value, index) => (index % 3 === 0 ? labels[index] : ''),
             color: '#111111',
-            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' },
+            font: { size: 18, family: 'Open Sans Condensed', weight: 'normal' },
             maxRotation: 0,
             padding: -2
           }
@@ -300,7 +300,7 @@ for (let i = 1; i <= totalFrames; i++) {
           ticks: {
             stepSize: stepY1,
             color: '#111111',
-            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' }
+            font: { size: 18, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
@@ -313,7 +313,7 @@ for (let i = 1; i <= totalFrames; i++) {
           ticks: {
             stepSize: stepY2,
             color: '#7B1FA2',
-            font: { size: 23, family: 'Open Sans Condensed', weight: 'normal' }
+            font: { size: 18, family: 'Open Sans Condensed', weight: 'normal' }
           },
           grid: { drawOnChartArea: true, color: '#bdbdbd' },
           border: { display: false, dash: [3, 4] }
