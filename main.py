@@ -654,7 +654,7 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, main_text, bottom_t
         widgets.append({
             "decoratedText": {
                 "icon": {"iconUrl": icon_url},
-                "text": f"<b>{title_text}</b>"
+                "text": f"{title_text}"
             }
         })
         widgets.append({"divider": {}})
