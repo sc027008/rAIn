@@ -468,7 +468,7 @@ def fetch_10min_future_rain(lat, lon, zoom=ZOOM_LEVEL):
             result = get_max_rank_for_frame(frame)
             if result:
                 rank = result[3]
-                if rank > 0:
+                if val > 0.5:
                     is_clear_for_60min = False
                     break  # 1つでも雨雲があれば判定終了
             else:
@@ -810,7 +810,7 @@ def main():
         sent_amedes_in_this_run = True
 
     # 条件3: 雨上がりの予感（完全に止み、10〜60分後も全てランク0、アメデスから30分経過）
-    elif current_rank == 0 and weather_status in ["RAIN", "HEAVY_RAIN"] and last_evening_alert_date != today_str:
+    elif rain_val <= 0.5 and weather_status in ["RAIN", "HEAVY_RAIN"] and last_evening_alert_date != today_str:
         if (now_unix - last_amedes_time) >= 1800:
             if is_clear_for_60min:
                 print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
