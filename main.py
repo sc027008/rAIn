@@ -691,7 +691,6 @@ def send_google_chat_card(webhook_url, lat, lon, title_text, main_text, bottom_t
         "cardsV2": [{
             "cardId": unique_card_id,
             "card": {
-                "header": {"title": title_text, "imageUrl": icon_url, "imageType": "SQUARE"},
                 "sections": [{"widgets": widgets}]
             }
         }]
