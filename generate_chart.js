@@ -108,7 +108,7 @@ if (!fs.existsSync(dir)) {
 
 // --- 4. GIFEncoder と Canvas の初期化 ---
 const width = 480;
-const height = 210;
+const height = 200;
 
 const encoder = new GIFEncoder(width, height);
 encoder.createReadStream().pipe(fs.createWriteStream(gifOutputPath));
