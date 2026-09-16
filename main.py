@@ -810,16 +810,14 @@ def main():
         sent_amedes_in_this_run = True
 
     # 条件3: 雨上がりの予感（完全に止み、10〜60分後も全てランク0、アメデスから30分経過）
-    elif rain_val <= 0.5 and weather_status in ["RAIN", "HEAVY_RAIN"] and last_evening_alert_date != today_str:
-        if (now_unix - last_amedes_time) >= 1800:
-            if is_clear_for_60min:
-                print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
-                _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
-                
-                # 色付けなしのタイトルのみを送信
-                colored_rainbow_title = get_colored_title("雨上がりの予感")
-                send_google_chat_card(webhook_url, lat, lon, colored_rainbow_title, "", "", ICON_RAINBOW, chart_url)
-                save_state("CLEAR", 0, last_evening_alert_date)
+    elif rain_val <= 0.5 and weather_status in ["RAIN", "HEAVY_RAIN"] and last_evening_alert_date != today_str and (now_unix - last_amedes_time) >= 1800 and is_clear_for_60min:
+        print("[LOG] 分岐通過: 条件3 (「雨上がりの予感」通知対象)")
+        _, _, _, chart_url, _ = get_future_cumulative_rain_data(lat, lon, rain_val, ZOOM_LEVEL)
+        
+        # 色付けなしのタイトルのみを送信
+        colored_rainbow_title = get_colored_title("雨上がりの予感")
+        send_google_chat_card(webhook_url, lat, lon, colored_rainbow_title, "", "", ICON_RAINBOW, chart_url)
+        save_state("CLEAR", 0, last_evening_alert_date)
 
     # 条件4: それ以外（現状維持）
     else:
