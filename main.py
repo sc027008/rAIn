@@ -787,7 +787,7 @@ def main():
         south_tank = int((cum_15h * 6.1) + 0.5)
         
         main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
-        bottom_text = "˗ˏˋ 今後 15 h 積算 ˊˎ˗"
+        bottom_text = "⣠⣾ 今後 15 h 積算 ⣷⣄"
         
         send_google_chat_card(webhook_url, lat, lon, colored_dynamic_title, main_text, bottom_text, ICON_RAINY, chart_url)
         save_state("HEAVY_RAIN", now_unix, last_evening_alert_date)
@@ -803,7 +803,7 @@ def main():
         south_tank = int((cum_15h * 6.1) + 0.5)
         
         main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
-        bottom_text = "˗ˏˋ 今後 15 h 積算 ˊˎ˗"
+        bottom_text = "⣠⣾ 今後 15 h 積算 ⣷⣄"
         
         send_google_chat_card(webhook_url, lat, lon, colored_dynamic_title, main_text, bottom_text, ICON_RAINY, chart_url)
         save_state("RAIN", now_unix, last_evening_alert_date)
@@ -843,7 +843,7 @@ def main():
             south_tank = int((cum_15h * 6.1) + 0.5)
 
             main_text = f"北分離 <b>{north_tank}</b>　南分離 <b>{south_tank} m³</b>"
-            bottom_text = "˗ˏˋ 17～翌8時 積算 ˊˎ˗"
+            bottom_text = "⣠⣾ 17～翌8時 積算 ⣷⣄"
             
             colored_night_title = get_colored_title("今宵アメデス")
             
